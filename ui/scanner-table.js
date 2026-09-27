@@ -59,7 +59,10 @@ export function mount(root, app) {
     wlErrors: root.querySelector("#wl-errors"),
     root,
   };
-  els.refresh.addEventListener("click", () => app.actions.refreshQuotes());
+  els.refresh.addEventListener("click", () => {
+    els.refresh.disabled = true;
+    app.actions.refreshQuotes();
+  });
   for (const cb of root.querySelectorAll("[data-status]")) {
     cb.addEventListener("change", () => {
       if (cb.checked) ui.statuses.add(cb.dataset.status);

@@ -81,7 +81,7 @@ export function mount(root, app) {
       },
     };
     const r = app.actions.saveSettings(overrides);
-    out.className = r.ok ? "ok-text" : "error-text";
+    out.className = `result ${r.ok ? "ok-text" : "error-text"}`;
     out.innerHTML = r.ok ? "Saved." : `<ul>${r.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`;
   });
   root.querySelector("#settings-reset").addEventListener("click", () => {
@@ -105,7 +105,7 @@ function fill(app) {
   f.rail.value = c.CSFLOAT_PAYOUT_RAIL;
   if (app.settingsErrors.length) {
     const out = els.form.querySelector(".result");
-    out.className = "error-text";
+    out.className = "result error-text";
     out.textContent = app.settingsErrors.join("; ");
   }
 }

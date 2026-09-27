@@ -259,7 +259,16 @@ async function boot() {
     setWatchlist: doSetWatchlist,
     render,
   };
-  for (const [name, view] of Object.entries(VIEWS)) view.mount(document.querySelector(`[data-view="${name}"]`), app);
+  for (const [name, view] of Object.entries(VIEWS)) {
+    const root = document.querySelector(`[data-view="${name}"]`);
+    try {
+      view.mount(root, app);
+    } catch (err) {
+      // One broken view must not take the others down.
+      root.innerHTML = `<p class="error-box">This section failed to load.</p>`;
+      console.error(`mount ${name} failed`, err instanceof Error ? err.message : "unknown");
+    }
+  }
   // Chart.js loads async from the CDN; re-render when (if) it arrives. Its absence never blocks.
   document.getElementById("chartjs")?.addEventListener("load", render);
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));

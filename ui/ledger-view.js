@@ -38,7 +38,7 @@ function marketOptions() {
 }
 
 function showResult(el, r, okText) {
-  el.className = r.ok ? "ok-text" : "error-text";
+  el.className = `result ${r.ok ? "ok-text" : "error-text"}`;
   el.innerHTML = r.ok ? escapeHtml(okText) : `<ul>${r.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>`;
 }
 
@@ -121,7 +121,7 @@ export function mount(root, app) {
     dlItems: root.querySelector("#dl-items"),
     dlOpen: root.querySelector("#dl-open"),
     fifoHint: root.querySelector("#fifo-hint"),
-    sellForm: root.querySelector("#f-sell"),
+    sellItem: root.querySelector('#f-sell input[name="item"]'),
   };
   for (const input of root.querySelectorAll('input[type="datetime-local"]')) input.value = nowUtcLocalValue();
 
@@ -215,7 +215,7 @@ export function mount(root, app) {
   });
 
   const updateFifoHint = () => {
-    const item = els.sellForm.elements.item.value.trim();
+    const item = els.sellItem.value.trim();
     const open = (app.ledger?.lots ?? [])
       .filter((l) => l.status === "open" && l.canonical_item_id === item)
       .sort((a, b) => Date.parse(a.buy_timestamp) - Date.parse(b.buy_timestamp) || a.seq - b.seq);
@@ -226,7 +226,7 @@ export function mount(root, app) {
     const { validQuantities } = selectFifoLots(open, -1);
     els.fifoHint.textContent = `Open lots (oldest first): ${open.map((l) => l.quantity).join(", ")}. Valid sale quantities: ${validQuantities.join(", ")}.`;
   };
-  els.sellForm.elements.item.addEventListener("input", updateFifoHint);
+  els.sellItem.addEventListener("input", updateFifoHint);
   els.updateFifoHint = updateFifoHint;
 }
 
