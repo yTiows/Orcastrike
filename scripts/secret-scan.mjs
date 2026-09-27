@@ -68,7 +68,7 @@ for (const f of shipped) {
 }
 
 // 5: Worker logging
-if (/console\.(log|info|warn|error|debug)/.test(readFileSync("worker/index.js", "utf8"))) findings.push("worker/index.js: contains console logging");
+if (/console\.(log|info|warn|error|debug)/.test(readFileSync("worker/lib.js", "utf8") + readFileSync("worker/index.js", "utf8"))) findings.push("worker/: contains console logging");
 
 // 6: wrangler.toml
 const toml = readFileSync("wrangler.toml", "utf8");

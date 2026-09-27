@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, mock, test } from "node:test";
 import assert from "node:assert/strict";
-import worker, {
+import worker from "../worker/index.js";
+import * as entryModule from "../worker/index.js";
+import {
   STATES,
   TTL_SECONDS,
   UPSTREAM,
   aggregateSteamHistory,
   cacheKey,
   resetCacheForTests,
-} from "../worker/index.js";
+} from "../worker/lib.js";
 
 const SECRET = "TEST_ONLY_fake_csfloat_key_0000"; // dummy; never a real credential
 const ITEM = "AK-47 | Redline (Field-Tested)";
@@ -58,6 +60,11 @@ afterEach(() => {
 });
 
 // ---- routing / method policy --------------------------------------------------------
+
+test("entry module exports only the default handler (workerd treats named exports as entrypoints)", () => {
+  assert.deepEqual(Object.keys(entryModule), ["default"]);
+  assert.equal(typeof worker.fetch, "function");
+});
 
 test("read-only: non-GET methods rejected, no trade routes exist", async () => {
   install(() => json({}));
