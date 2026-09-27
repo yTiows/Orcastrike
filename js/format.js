@@ -62,3 +62,9 @@ export function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+// 1083400 micros → "1.083400"
+export function formatMicros(micros) {
+  if (!Number.isSafeInteger(micros) || micros < 0) return "—";
+  return `${(micros - (micros % 1000000)) / 1000000}.${String(micros % 1000000).padStart(6, "0")}`;
+}
