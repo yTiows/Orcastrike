@@ -1,0 +1,27 @@
+{
+  "name": "skin-arb-terminal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Read-only CS2 skin cross-market spread scanner + user-recorded ledger. Displays and records; never executes trades.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "lint": "eslint .",
+    "check": "npm run lint && npm test",
+    "audit:secrets": "node scripts/secret-scan.mjs",
+    "package:pages": "node scripts/package-pages.mjs",
+    "dev:worker": "wrangler dev",
+    "dev:web": "npm run package:pages && wrangler pages dev dist --port 8788",
+    "deploy:worker": "wrangler deploy",
+    "deploy:pages": "npm run package:pages && wrangler pages deploy dist --project-name skin-arb-terminal"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "wrangler": "4.141.0"
+  }
+}
