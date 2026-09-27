@@ -5,10 +5,10 @@
   "description": "Read-only CS2 skin cross-market spread scanner + user-recorded ledger. Displays and records; never executes trades.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test \"tests/*.test.js\"",
     "lint": "eslint .",
     "check": "npm run lint && npm test",
     "audit:secrets": "node scripts/secret-scan.mjs",
