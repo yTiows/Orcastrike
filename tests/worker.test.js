@@ -9,7 +9,7 @@ import worker, {
   resetCacheForTests,
 } from "../worker/index.js";
 
-const SECRET = "csf_TEST_KEY_do_not_leak_9f8e7d";
+const SECRET = "TEST_ONLY_fake_csfloat_key_0000"; // dummy; never a real credential
 const ITEM = "AK-47 | Redline (Field-Tested)";
 const CANONICAL_KEYS = ["source", "canonical_item_id", "price_usd_cents", "listing_depth", "captured_at", "expires_at", "state"];
 const realFetch = globalThis.fetch;
