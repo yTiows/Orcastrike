@@ -47,12 +47,14 @@ Shipped app (static, no framework, no bundler):
   reinvestment rule, export/import
 - `js/backtest.js` — single-market historical simulation (historical context only); cross-market verdict
 - `js/events.js` — event schema validation, 7d-before/after price delta
+- `js/app.js` — controller/bootstrap (loads state, derives views, routes UI actions)
 - `ui/dashboard.js`, `ui/scanner-table.js`, `ui/ledger-view.js`, `ui/events-view.js`, `ui/settings-view.js`
 - `config/defaults.js` (deep-frozen), `config/fees.js`
 - `static/events.json`, `static/watchlist-starter.json`
 
 Backend:
-- `worker/index.js` — Cloudflare Worker: `/api/health`, `/api/quote`, `/api/history`, `/api/fx`.
+- `worker/index.js` — Worker entry; exports only the default handler (DECISIONS D-29).
+- `worker/lib.js` — implementation: `/api/health`, `/api/quote`, `/api/history`, `/api/fx`.
   Imports `js/money.js` (wrangler/esbuild bundles it) so ingestion conversion uses the same code.
 - `wrangler.toml`
 
@@ -100,6 +102,32 @@ Dev: eslint 10.11.0, @eslint/js 10.0.1, globals 17.12.0, wrangler 4.141.0 (all p
 13. Live smoke test — **blocked (depends on 12)**
 14. Finalize docs, check REQUIREMENTS.md rows
 
-## Status
+## Status (2026-09-27)
 
-See CHANGELOG.md for what was completed. Final state is recorded at the bottom of REQUIREMENTS.md.
+Steps 1–11 and 14 done. Steps 12–13 blocked on credentials (see REQUIREMENTS.md). CHANGELOG.md
+lists what changed.
+
+## Deploy runbook (Steps 12–13, run where credentials and network exist)
+
+```sh
+npm ci
+npm run check && npm run audit:secrets        # lint + 65 tests + P0-9 audit; must all pass
+export CLOUDFLARE_API_TOKEN=...  CLOUDFLARE_ACCOUNT_ID=...   # shell only, never a file in the repo
+npx wrangler secret put CSFLOAT_API_KEY        # optional; omit → CSFloat reports NOT_CONFIGURED
+npm run deploy:worker                          # prints https://skin-arb-terminal-proxy.<acct>.workers.dev
+# set DEFAULTS.WORKER_BASE_URL in config/defaults.js to that URL (or set it per browser in Settings)
+npx wrangler pages project create skin-arb-terminal --production-branch main   # first time only
+npm run deploy:pages                           # uploads dist/ only → https://skin-arb-terminal.pages.dev
+```
+
+Smoke test against the live Worker (`W=https://…workers.dev`):
+
+```sh
+curl -s "$W/api/health"                                   # csfloat: CONFIGURED | NOT_CONFIGURED
+curl -s "$W/api/quote?source=steam&item=AK-47%20%7C%20Redline%20(Field-Tested)"     # AVAILABLE or explicit state
+curl -s "$W/api/quote?source=skinport&item=AK-47%20%7C%20Redline%20(Field-Tested)"  # price_usd_cents in USD, listing_depth null
+curl -s "$W/api/quote?source=csfloat&item=AK-47%20%7C%20Redline%20(Field-Tested)"   # NOT_CONFIGURED when no key; AVAILABLE with key
+curl -s "$W/api/history?source=steam&item=AK-47%20%7C%20Redline%20(Field-Tested)"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$W/api/quote"                     # 405
+curl -s -i "$W/api/health" | grep -i -E "authorization|set-cookie" && echo LEAK || echo "no auth headers"
+```
