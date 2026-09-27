@@ -1,0 +1,17 @@
+# Cloudflare Worker: read-only proxy + cache (see worker/index.js).
+name = "skin-arb-terminal-proxy"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+# CORS allow-list (not a secret). Pages production URL + local dev.
+ALLOWED_ORIGINS = "https://skin-arb-terminal.pages.dev,http://localhost:8788"
+
+# CSFLOAT_API_KEY is a SECRET. Set it with:
+#   npx wrangler secret put CSFLOAT_API_KEY
+# Never add it to this file, to [vars], or to any tracked file.
+
+[observability]
+# No request/response logging: nothing the Worker handles is written to logs.
+enabled = false
