@@ -227,28 +227,29 @@ export function resolveSellFee({ market, schedule = "auto", unitGrossCents, fxRa
 
 // ---- Canonical trade calculation --------------------------------------------------
 
-// Implements the spec's canonical formula on the total gross (quantity × unit sell price).
-// Returns { state: "OK", ...intermediates } or { state: "INVALID", reason } — never NaN.
-export function computeTrade({
+// Canonical formula on the total gross (quantity × unit sell price) against a total
+// acquisition cost. Used directly by the ledger (a FIFO sale can span lots bought at
+// different prices). Returns { state: "OK", ...intermediates } or { state: "INVALID", reason }.
+export function computeSale({
   quantity,
-  unitBuyPriceCents,
   unitSellPriceCents,
+  acquisitionCostCents,
   sellFeeBps,
   payoutFeeBps,
   sellFeeModel = "flat_on_gross",
 }) {
   const invalid = (reason) => ({ state: "INVALID", reason });
   if (!Number.isSafeInteger(quantity) || quantity < 1) return invalid("quantity must be an integer >= 1");
-  if (!Number.isSafeInteger(unitBuyPriceCents) || unitBuyPriceCents <= 0) return invalid("buy price must be > 0 cents");
   if (!Number.isSafeInteger(unitSellPriceCents) || unitSellPriceCents <= 0) return invalid("sell price must be > 0 cents");
+  if (!Number.isSafeInteger(acquisitionCostCents) || acquisitionCostCents <= 0) {
+    return invalid("acquisition cost must be > 0 cents");
+  }
   if (!isValidFeeBps(sellFeeBps)) return invalid("sell fee must satisfy 0 <= fee < 1");
   if (!isValidFeeBps(payoutFeeBps)) return invalid("payout fee must satisfy 0 <= fee < 1");
 
   try {
     const gross = unitSellPriceCents * quantity;
-    const acquisition = unitBuyPriceCents * quantity;
-    if (!Number.isSafeInteger(gross) || !Number.isSafeInteger(acquisition)) return invalid("amount overflow");
-    if (acquisition <= 0) return invalid("acquisition cost must be > 0");
+    if (!Number.isSafeInteger(gross)) return invalid("amount overflow");
 
     let afterSellerFee;
     if (sellFeeModel === "valve_fee_on_top") {
@@ -261,12 +262,11 @@ export function computeTrade({
     }
     const payoutFee = computePayoutFee(afterSellerFee, payoutFeeBps);
     const netProceeds = afterSellerFee - payoutFee;
-    const netProfit = netProceeds - acquisition;
-    const margin = marginBps(netProfit, acquisition);
+    const netProfit = netProceeds - acquisitionCostCents;
+    const margin = marginBps(netProfit, acquisitionCostCents);
     return {
       state: "OK",
       quantity,
-      unit_buy_price_cents: unitBuyPriceCents,
       unit_sell_price_cents: unitSellPriceCents,
       gross_sale_price_cents: gross,
       sell_fee_bps: sellFeeBps,
@@ -276,7 +276,7 @@ export function computeTrade({
       payout_fee_bps: payoutFeeBps,
       payout_fee_cents: payoutFee,
       net_sale_proceeds_cents: netProceeds,
-      acquisition_cost_cents: acquisition,
+      acquisition_cost_cents: acquisitionCostCents,
       net_profit_cents: netProfit,
       net_margin_bps: margin,
       // Display-only convenience; derived from integer bps, never fed back into math.
@@ -286,4 +286,25 @@ export function computeTrade({
     if (err instanceof MoneyError) return invalid(err.message);
     throw err;
   }
+}
+
+// Single-price case: acquisition_cost_cents = quantity × unit_buy_price_cents.
+export function computeTrade({ quantity, unitBuyPriceCents, unitSellPriceCents, sellFeeBps, payoutFeeBps, sellFeeModel }) {
+  if (!Number.isSafeInteger(quantity) || quantity < 1) return { state: "INVALID", reason: "quantity must be an integer >= 1" };
+  if (!Number.isSafeInteger(unitBuyPriceCents) || unitBuyPriceCents <= 0) {
+    return { state: "INVALID", reason: "buy price must be > 0 cents" };
+  }
+  const acquisition = unitBuyPriceCents * quantity;
+  if (!Number.isSafeInteger(acquisition)) return { state: "INVALID", reason: "amount overflow" };
+  const r = computeSale({ quantity, unitSellPriceCents, acquisitionCostCents: acquisition, sellFeeBps, payoutFeeBps, sellFeeModel });
+  return r.state === "OK" ? { ...r, unit_buy_price_cents: unitBuyPriceCents } : r;
+}
+
+// Integer median (round-half-up on the midpoint for even counts).
+export function medianInt(values) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return mulDivRoundHalfUp(sorted[mid - 1] + sorted[mid], 1, 2);
 }

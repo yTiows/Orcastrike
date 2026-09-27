@@ -11,7 +11,7 @@ export default [
       "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       eqeqeq: ["error", "always"],
       "no-implicit-coercion": "error",
-      "prefer-const": "error",
+      "prefer-const": ["error", { destructuring: "all" }],
       "no-var": "error",
     },
   },
