@@ -4,12 +4,67 @@
 // auth/cookie handling or key names.   5. Worker never logs.   6. wrangler.toml has no secrets.
 // 7. Literal values of any credentials present in this shell's env are absent everywhere.
 // 8. P0-8 wording: no "expected margin/return" phrasing in shipped files.
+//
+// Without git (a ZIP download, or git not installed) the working tree is scanned instead of the
+// tracked files, honouring .gitignore, and the history check is reported as SKIPPED.
+// ORCASTRIKE_SCAN_NO_GIT=1 forces that mode (used by the tests).
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
+process.chdir(join(dirname(fileURLToPath(import.meta.url)), ".."));
 const findings = [];
-const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+const lines = (text) => text.split(/\r?\n/);
+
+function isGitCheckout() {
+  if (process.env.ORCASTRIKE_SCAN_NO_GIT === "1") return false;
+  try {
+    return git("rev-parse", "--is-inside-work-tree").trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
+// Minimal .gitignore matcher: comments, negation, trailing-slash directories, * and **.
+function ignoreMatcher(text) {
+  const rules = lines(text)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#"))
+    .map((l) => {
+      const negate = l.startsWith("!");
+      let pat = negate ? l.slice(1) : l;
+      const dirOnly = pat.endsWith("/");
+      pat = pat.replace(/\/$/, "");
+      const anchored = pat.includes("/");
+      const body = pat.replace(/^\//, "").split("**").map((part) => part.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]")).join(".*");
+      const re = new RegExp(`${anchored ? "^" : "(^|/)"}${body}${dirOnly ? "(/|$)" : "$"}`);
+      return { negate, re, dirOnly };
+    });
+  return (path, isDir) => {
+    let ignored = false;
+    for (const r of rules) if ((!r.dirOnly || isDir) && r.re.test(path)) ignored = !r.negate;
+    return ignored;
+  };
+}
+
+function workingTreeFiles() {
+  const ignored = ignoreMatcher(readFileSync(".gitignore", "utf8"));
+  const out = [];
+  const walk = (dir) => {
+    for (const d of readdirSync(dir || ".", { withFileTypes: true })) {
+      const rel = dir ? `${dir}/${d.name}` : d.name;
+      if (d.name === ".git" || ignored(rel, d.isDirectory())) continue;
+      if (d.isDirectory()) walk(rel);
+      else if (d.isFile()) out.push(rel);
+    }
+  };
+  walk("");
+  return out.sort();
+}
+
+const IS_GIT = isGitCheckout();
 
 const PATTERNS = [
   ["generic credential assignment", /(?:api[_-]?key|secret|token|passw(?:or)?d|authorization)["']?\s*[:=]\s*["'][^"'\s]{16,}["']/i],
@@ -27,15 +82,14 @@ const PATTERNS = [
 const ALLOW = /TEST_ONLY|csf_TEST_KEY_do_not_leak_9f8e7d/;
 
 function scanText(label, text) {
-  const lines = text.split("\n");
-  lines.forEach((line, i) => {
+  lines(text).forEach((line, i) => {
     if (ALLOW.test(line)) return;
     for (const [name, re] of PATTERNS) if (re.test(line)) findings.push(`${label}:${i + 1}: ${name}`);
   });
 }
 
-// 1 + 2: tracked files
-const tracked = git("ls-files").split("\n").filter(Boolean);
+// 1 + 2: tracked files (or, without git, every non-ignored file in the working tree)
+const tracked = IS_GIT ? lines(git("ls-files")).filter(Boolean) : workingTreeFiles();
 for (const f of tracked) {
   if (/(^|\/)\.env(\.|$)/.test(f) && f !== ".env.example") findings.push(`${f}: env file is tracked`);
   if (/(^|\/)\.dev\.vars$/.test(f)) findings.push(`${f}: .dev.vars is tracked`);
@@ -44,19 +98,19 @@ for (const f of tracked) {
 }
 
 // 2: full history (added lines only)
-const history = git("log", "-p", "--all", "--no-color", "--unified=0");
+const history = IS_GIT ? git("log", "-p", "--all", "--no-color", "--unified=0") : "";
 let current = "history";
-for (const line of history.split("\n")) {
+for (const line of lines(history)) {
   if (line.startsWith("+++ b/")) current = `history:${line.slice(6)}`;
   else if (line.startsWith("+") && !line.startsWith("+++") && !current.endsWith("package-lock.json")) scanText(current, line.slice(1));
 }
 
 // 3: .env.example values empty
-for (const [i, line] of readFileSync(".env.example", "utf8").split("\n").entries()) {
+for (const [i, line] of lines(readFileSync(".env.example", "utf8")).entries()) {
   const m = /^\s*([A-Z0-9_]+)\s*=(.*)$/.exec(line);
   if (m && m[2].trim() !== "") findings.push(`.env.example:${i + 1}: ${m[1]} has a value`);
 }
-if (!readFileSync(".gitignore", "utf8").split("\n").includes(".env")) findings.push(".gitignore does not ignore .env");
+if (!lines(readFileSync(".gitignore", "utf8")).map((l) => l.trim()).includes(".env")) findings.push(".gitignore does not ignore .env");
 
 // 4 + 8: shipped client files
 const shipped = tracked.filter((f) => /^(index\.html|styles\.css|_headers|js\/|ui\/|config\/|static\/)/.test(f));
@@ -118,7 +172,11 @@ for (const name of ["CSFLOAT_API_KEY", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOU
   if (history.includes(v)) findings.push(`git history contains the literal value of $${name}`);
 }
 
-console.log(`secret-scan: ${tracked.length} tracked files, full history, ${shipped.length} shipped files checked`);
+console.log(
+  IS_GIT
+    ? `secret-scan: ${tracked.length} tracked files, full history, ${shipped.length} shipped files checked`
+    : `secret-scan: ${tracked.length} working-tree files (not a git checkout: git history SKIPPED), ${shipped.length} shipped files checked`,
+);
 if (findings.length) {
   console.log(`FAIL — ${findings.length} finding(s):`);
   for (const f of findings) console.log(`  ${f}`);

@@ -168,3 +168,25 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 | FAILURE | L2/L3 can't be enabled in this build (`EXECUTION_API_VERIFIED = false`). The controller is exercised only against a SYNTHETIC mock. |
 | RECOVERY | Release the kill switch in the UI. Release requires the same origin plus an explicit confirmation. |
 | TEST | `ACCEPTANCE 7: unexpected API response in L3 → STOP and kill switch set`; `API failure and stale data also STOP; a well-formed response executes (mock)`; `kill switch stops UMBRA staging (still notifies); non-UMBRA cycles do nothing` |
+
+## Update fails or is interrupted
+
+| | |
+|---|---|
+| INPUT | `update` (git checkout) or `update --convert` (ZIP folder) |
+| PROCESSING | `scripts/orca.mjs`: a running daemon, local edits, detached HEAD and diverged history are each checked before anything changes. Then fetch → database backup → fast-forward → dev tools (only if `package-lock.json` changed) → tests. |
+| OUTPUT | "Updated a → b (n new commits)" plus the commit list, or "Already up to date". |
+| FAILURE | Offline or no access → "Couldn't reach the repository", nothing changed. A running daemon, local edits or diverged history → refused, nothing changed (never a merge, rebase, reset or force). Tests failing after the update → the exact rollback (`git reset --keep <previous>`) and the database backup path are printed. |
+| RECOVERY | Stop the daemon, stash or commit edits, and retry. To roll back, run the printed command and copy the backed-up `orcastrike.sqlite` back while the daemon is stopped. |
+| TEST | `update: fast-forwards, backs up the database first, then reports up to date`; `update refuses: local edits, diverged history, or a running daemon; nothing is changed`; `update --convert: a ZIP-style folder becomes a git checkout; data kept, differing files copied aside` |
+
+## Launcher can't start the app
+
+| | |
+|---|---|
+| INPUT | `start` (double-click `Orcastrike.cmd`, `npm start`) |
+| PROCESSING | Node version gate (≥ 22.13) → already-running check (health contract) → port check → spawn the daemon → wait for health |
+| OUTPUT | "Orcastrike is running: http://127.0.0.1:8790/", and the browser opens |
+| FAILURE | Node missing or too old → an install command is printed (`Orcastrike.cmd` checks before calling Node). Port taken by another program → the `--port` hint. The daemon exits early (for example code 2, unreadable database) → its own message plus a `doctor` hint. Already running → just opens the browser. |
+| RECOVERY | Follow the printed hint; `doctor` checks every prerequisite. |
+| TEST | `start → running → stop: one command each, clean exit on every platform`; `Node version gate: 22.13+ (built-in SQLite unflagged)`; `doctor reports every check as data, never a secret value` |

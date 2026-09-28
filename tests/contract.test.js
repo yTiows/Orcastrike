@@ -6,10 +6,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PARSERS, EXPECTED_SHAPES, describeShape, diffShape, redactDeep, sanitizeBody } from "../daemon/contract.js";
 import { parseSkinportSalesHistory, parseSteamPriceOverview, parseUsdPriceString } from "../daemon/parsers.js";
 
-const LIVE = new URL("./fixtures/live/", import.meta.url).pathname;
+const LIVE = fileURLToPath(new URL("./fixtures/live/", import.meta.url));
 
 function liveFixtures() {
   if (!existsSync(LIVE)) return [];

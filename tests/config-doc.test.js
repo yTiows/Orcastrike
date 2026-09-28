@@ -30,7 +30,7 @@ test("every research setting has a class, a default, persistence and a doc; user
 });
 
 test("CONFIGURATION.md is generated from the current code (run scripts/gen-config-doc.mjs)", () => {
-  const doc = readFileSync(DOC_PATH, "utf8");
+  const doc = readFileSync(DOC_PATH, "utf8").replace(/\r\n/g, "\n");
   assert.equal(doc, renderConfigDoc());
   for (const e of SCHEMA) assert.ok(doc.includes(`\`${e.key}\``), e.key);
   for (const k of v1Leaves()) assert.ok(doc.includes(`\`${k}\``), k);

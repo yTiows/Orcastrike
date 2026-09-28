@@ -108,6 +108,8 @@ Written through POST /api/v2/settings (same-origin, JSON). Only `user_setting` k
 | `ORCASTRIKE_CONTRACT_REPORT` | developer_default | daemon env | `tests/fixtures/live/CONTRACT_REPORT.json` | Parser verification source (D-38). |
 | `ORCASTRIKE_SYNTHETIC` | test only | daemon env | unset | `1` flags every stored row SYNTHETIC; required for the upstream override. |
 | `ORCASTRIKE_UPSTREAM_OVERRIDE` | test only | daemon env | unset | Loopback host only, and only with ORCASTRIKE_SYNTHETIC=1; anything else refuses to start. |
+| `ORCASTRIKE_ROOT` | test only | launcher env | unset | Points scripts/orca.mjs at a scratch checkout (tests/orca.test.js). |
+| `ORCASTRIKE_SCAN_NO_GIT` | test only | secret-scan env | unset | `1` scans the working tree as if there were no git checkout (ZIP download). |
 | `ALLOWED_ORIGINS` | developer_default | wrangler.toml [vars] | Pages origin + localhost:8788 | Worker CORS allow-list. |
 | `NTFY_TOPIC` | not implemented | — | — | Push notifications are BLOCKED (Phase 0 unverified); nothing reads this. |
 

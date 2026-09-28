@@ -1,6 +1,6 @@
 {
   "name": "skin-arb-terminal",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Read-only CS2 skin cross-market spread scanner + user-recorded ledger. Displays and records; never executes trades.",
   "type": "module",
@@ -8,6 +8,11 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning scripts/orca.mjs start",
+    "stop": "node --disable-warning=ExperimentalWarning scripts/orca.mjs stop",
+    "setup": "node --disable-warning=ExperimentalWarning scripts/orca.mjs setup",
+    "update": "node --disable-warning=ExperimentalWarning scripts/orca.mjs update",
+    "doctor": "node --disable-warning=ExperimentalWarning scripts/orca.mjs doctor",
     "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.js\"",
     "lint": "eslint .",
     "check": "npm run lint && npm test",

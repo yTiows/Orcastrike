@@ -187,6 +187,17 @@ Test names are literal `test("…")` titles unless a file is named. "Browser smo
 | PASS | Security | tests/security.test.js, scripts/secret-scan.mjs |
 | PASS | Clean clone | See Final state |
 
+### Operations: setup, run, update (added 2026-09-28)
+
+| Status | ID | Requirement | Implementing file(s) | Test / verification |
+|---|---|---|---|---|
+| PASS | OPS-START | One command starts the app and opens the UI, with no install step; detects an already running instance and port conflicts; `stop` ends it cleanly | scripts/orca.mjs, Orcastrike.cmd, orcastrike.sh, daemon/main.js (`/api/v2/shutdown`) | "start → running → stop: one command each, clean exit on every platform"; "shutdown endpoint: same-origin JSON plus explicit confirmation only" |
+| PASS | OPS-SETUP | Setup checks prerequisites, installs dev tools only when the lockfile changed, runs the tests | scripts/orca.mjs | "Node version gate: 22.13+ (built-in SQLite unflagged)"; "dev tools reinstall only when package-lock.json changes" |
+| PASS | OPS-UPDATE | Updates: fast-forward only, database backed up first, refuses over local edits / diverged history / a running daemon, rollback printed; ZIP → git conversion keeps data and copies differing files aside | scripts/orca.mjs | "update: fast-forwards, backs up the database first, then reports up to date"; "update refuses: local edits, diverged history, or a running daemon; nothing is changed"; "update --convert: a ZIP-style folder becomes a git checkout; data kept, differing files copied aside"; "database backup copies the file with WAL/SHM and keeps the newest five" |
+| PASS | OPS-DOCTOR | Diagnosis of the installation; secrets reported only as set / not set | scripts/orca.mjs | "doctor reports every check as data, never a secret value" |
+| PASS | OPS-GUIDE | Detailed setup and run guide | SETUP.md, README.md | Document review |
+| UNVERIFIED | OPS-WINDOWS | Test suite, secret scan and launchers pass on Windows | tests/*, scripts/secret-scan.mjs, .gitattributes, Orcastrike.cmd, .github/workflows/ci.yml | "regression (Windows): no filesystem path is derived from URL.pathname"; "regression (Windows): secret scan runs without git, e.g. from a ZIP download, and says history was skipped". Final check: the CI windows-latest job. |
+
 ### Deployment
 
 | Status | ID | Requirement | Verification |

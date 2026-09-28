@@ -42,7 +42,7 @@ export function effectiveConfig(db) {
   return v.ok ? { cfg: v.effective, errors: [], warnings: v.warnings } : { cfg: RESEARCH_DEFAULTS, errors: [`stored settings rejected, defaults in force: ${v.errors.join("; ")}`], warnings: [] };
 }
 
-export async function startDaemon({ env = process.env, port = Number(env.ORCASTRIKE_PORT) || 8790, dataDir = env.ORCASTRIKE_DATA_DIR || join(ROOT, ".orcastrike-data"), extraRoutes = [], startScheduler = true, log = makeLogger(process.stderr, env) } = {}) {
+export async function startDaemon({ env = process.env, port = Number(env.ORCASTRIKE_PORT) || 8790, dataDir = env.ORCASTRIKE_DATA_DIR || join(ROOT, ".orcastrike-data"), extraRoutes = [], startScheduler = true, log = makeLogger(process.stderr, env), onShutdownRequest = null } = {}) {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   try {
     chmodSync(dataDir, 0o700);
@@ -108,6 +108,18 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
         : { ...r, handler: () => { throw new HttpError(503, "database integrity check failed; daemon is read-only (DEGRADED). See FAILURE_STATES.md"); } },
     );
   }
+  // `npm run stop` / `Orcastrike.cmd stop`: same-origin JSON like every write (enforced by the
+  // server), plus explicit confirmation. Works in DEGRADED mode too. Embedded use (tests) → 501.
+  routes.push({
+    method: "POST",
+    path: "/api/v2/shutdown",
+    handler: ({ body }) => {
+      if (body?.confirm !== true) throw new HttpError(422, "explicit confirmation required");
+      if (!onShutdownRequest) throw new HttpError(501, "shutdown is available only when the daemon runs as its own process");
+      setTimeout(onShutdownRequest, 50);
+      return { ok: true, stopping: true };
+    },
+  });
   const server = createDaemonServer({ root: ROOT, port, routes, log });
   await new Promise((r) => server.listen(port, "127.0.0.1", r));
 
@@ -169,17 +181,21 @@ export class DatabaseUnreadableError extends Error {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let d;
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    makeLogger(process.stderr, process.env)("info", "stopping");
+    await d.stop();
+    process.exit(0);
+  };
   try {
-    d = await startDaemon();
+    d = await startDaemon({ onShutdownRequest: shutdown });
   } catch (err) {
     if (!(err instanceof DatabaseUnreadableError)) throw err;
     makeLogger(process.stderr, process.env)("error", err.message);
     process.exit(2);
   }
-  const shutdown = async () => {
-    await d.stop();
-    process.exit(0);
-  };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }

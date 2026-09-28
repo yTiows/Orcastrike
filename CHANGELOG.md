@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 2.1.0 — 2026-09-28 (setup automation and Windows support)
+
+### Added
+- **One-command operation:** `scripts/orca.mjs` (zero dependencies), with `Orcastrike.cmd` (double-click on Windows), `orcastrike.sh`, and `npm start` / `npm run stop|setup|update|doctor`.
+  - `start` needs no install. It opens the browser, detects an already running instance, and reports port conflicts.
+  - `stop` stops the daemon cleanly from any window.
+  - `setup` checks Node ≥ 22.13 and SQLite, installs dev tools only when `package-lock.json` changed, and runs the tests.
+  - `update` fast-forwards only, backs up the database first, refuses over local edits, diverged history or a running daemon, and prints rollback steps. `--convert` turns a ZIP folder into an updatable checkout, copying differing files aside first.
+  - `doctor` diagnoses the installation without printing secrets.
+  - On start, a git checkout checks in the background for a newer version and prints a notice. It never updates by itself.
+- Daemon POST `/api/v2/shutdown` (same-origin JSON + confirmation), used by `stop`.
+- **SETUP.md**, a detailed Windows-first guide: prerequisites, CSFloat key as a user environment variable, live verification, daily use, data locations, updates, troubleshooting.
+- **README.md**: quick start and a documentation map.
+- **CI:** GitHub Actions on ubuntu-latest and windows-latest, running lint, tests, the secret scan, the config-doc check, and both launchers.
+- `.gitattributes`: LF everywhere, CRLF kept for `.cmd`.
+
+### Fixed (found by the first run on Windows, each with a regression test)
+- Two tests built filesystem paths from `URL.pathname` (`/C:/…` on Windows). Four tests failed, and the LIVE-fixture test would have silently found no fixtures.
+- The secret scan crashed without git (ZIP downloads) and mis-parsed CRLF files. It now scans the working tree, honouring `.gitignore`, and reports "git history SKIPPED".
+- Generated-doc and CSS checks compared CRLF-sensitive bytes.
+
 ## 2.0.0 — 2026-09-28 (research and evidence system; not deployed, not live-verified)
 
 ### Added

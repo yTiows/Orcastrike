@@ -192,3 +192,21 @@ test("fee calibration accept: needs explicit confirmation and valid overrides; c
   assert.ok(before.versions.every((b) => after.versions.some((a) => a.fee_model_version === b.fee_model_version && a.created_at === b.created_at)), "old versions kept unchanged");
   assert.equal(after.proposals[0].status, "ACCEPTED");
 });
+
+test("static UI is served from the repo on every platform; traversal and non-allow-listed files are refused", async () => {
+  for (const path of ["/", "/index.html", "/styles.css", "/js/app.js", "/ui/research-view.js", "/static/events.json"]) {
+    const r = await fetch(`${base}${path}`);
+    assert.equal(r.status, 200, path);
+    assert.match(r.headers.get("content-security-policy") ?? "", /default-src 'self'/, path);
+  }
+  for (const path of ["/package.json", "/daemon/main.js", "/js/../package.json", "/%2e%2e/package.json", "/.orcastrike-data/orcastrike.sqlite"]) {
+    assert.equal((await fetch(`${base}${path}`)).status, 404, path);
+  }
+});
+
+test("shutdown endpoint: same-origin JSON plus explicit confirmation only", async () => {
+  assert.equal((await post("/api/v2/shutdown", { confirm: true }, null)).status, 403, "no Origin");
+  assert.equal((await post("/api/v2/shutdown", { confirm: true }, "https://evil.example")).status, 403, "cross-origin");
+  assert.equal((await post("/api/v2/shutdown", {})).status, 422, "no confirmation");
+  assert.ok((await fetch(`${base}/api/v2/health`)).ok, "still running");
+});

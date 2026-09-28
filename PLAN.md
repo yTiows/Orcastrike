@@ -138,28 +138,9 @@ curl -s -i "$W/api/health" | grep -i -E "authorization|set-cookie" && echo LEAK 
 
 The **daemon** (`daemon/`, Node ≥ 22.13, built-in `node:sqlite`, no new npm dependencies) is the primary data plane. It samples Steam, Skinport, CSFloat and Frankfurter within per-host token buckets, stores append-only observations in `.orcastrike-data/orcastrike.sqlite`, builds snapshot groups, computes opportunities with a full trace, runs forward paper trading, and serves the UI plus a JSON contract on `http://127.0.0.1:8790`. The Cloudflare **Worker** stays as the thin v1 fallback. The **browser** keeps the ledger (IndexedDB) and syncs real trades and capital to the daemon for evidence. ARCHITECTURE_DELTA.md has the details, EVIDENCE.md the gates, CONFIGURATION.md every setting, and FAILURE_STATES.md what happens when things break.
 
-## First run on your machine (in order)
+## Install, run, update
 
-```sh
-npm ci
-npm run check && npm run audit:secrets      # lint + tests + secret scan; must all pass
-node scripts/netcheck.mjs                   # measures reachability and latency to each source (daemon placement, D-39)
-node scripts/contract_test.mjs              # live contract test; optional: CSFLOAT_API_KEY=... in the environment
-```
-
-The contract test stores sanitized LIVE fixtures under `tests/fixtures/live/`, writes `CONTRACT_REPORT.json` and `static/parser-verification.json`, and exits 0 only when every probe passes. Until it does, every parser is UNVERIFIED and **no opportunity can be ELIGIBLE** (D-38). That is the intended output. Commit the new fixtures and report after checking them for personal data. The sanitizer removes seller identity and credential-like keys, but review them anyway.
-
-## Running the daemon
-
-```sh
-npm run daemon                              # http://127.0.0.1:8790 (loopback only)
-CSFLOAT_API_KEY=... npm run daemon          # enable CSFloat; the key lives only in this process's environment
-ORCASTRIKE_PORT=8791 ORCASTRIKE_DATA_DIR=/path npm run daemon
-```
-
-Open `http://127.0.0.1:8790/`. The daemon serves the UI on the same origin, so no Worker URL is needed. The Research tab shows evidence, opportunities (every blocked reason and trace), paper vs real trades, data quality and coverage. Evidence needs calendar time: `hold_adverse_move` needs 30 snapshot pairs H days apart (7 days minimum), and SIGNAL_EVIDENCE needs ≥ 14 days plus ≥ 30 closed paper trades.
-
-Keep your own copy of `.orcastrike-data/` if the observation history matters to you: the daemon keeps one copy only (FAILURE_STATES.md, "Corrupt database").
+SETUP.md is the step-by-step guide. In short: `scripts/orca.mjs` (wrapped by `Orcastrike.cmd`, `orcastrike.sh` and `npm start` / `npm run setup|update|stop|doctor`) starts the daemon and opens the UI, updates by fast-forward with a database backup first, and diagnoses the installation. Evidence needs calendar time: `hold_adverse_move` needs 30 snapshot pairs H days apart (7 days minimum), and SIGNAL_EVIDENCE needs ≥ 14 days plus ≥ 30 closed paper trades. Until `node scripts/contract_test.mjs` passes on a real network, every parser is UNVERIFIED and **no opportunity can be ELIGIBLE** (D-38).
 
 ## Browser smoke test (not in `npm test`, D-44)
 
