@@ -6,8 +6,10 @@ import {
   exportLedger,
   importLedger,
   isIsoUtc,
+  realTradesForSync,
   recordAdjustment,
   recordBuy,
+  recordIncident,
   recordSell,
   replayLedger,
 } from "../js/ledger.js";
@@ -106,30 +108,83 @@ test("minimum_hold_until = buy + 7 days (ISO UTC); selling earlier is rejected",
   must(sell(r.ledger, ctx, { sell_timestamp: iso(T0 + 8 * day) }));
 });
 
-test("FIFO whole-lot accounting; partial-lot sales rejected", () => {
+test("FIFO across lots with partial-lot splitting (v2)", () => {
   const { ledger: l0, ctx } = setup(100000);
   let l = must(buy(l0, ctx, { quantity: 2, buy_price_cents: 1000, buy_timestamp: iso(T0 + day) })).ledger;
   l = must(buy(l, ctx, { quantity: 3, buy_price_cents: 1100, buy_timestamp: iso(T0 + 2 * day) })).ledger;
 
-  const partial = sell(l, ctx, { quantity: 1 });
-  assert.equal(partial.ok, false);
-  assert.match(partial.errors[0], /Partial-lot sales are not supported/);
-  assert.match(partial.errors[0], /Valid quantities: 2, 5/);
-  assert.equal(sell(l, ctx, { quantity: 3 }).ok, false); // 2 + 1 of the next lot
+  const one = must(sell(l, ctx, { quantity: 1, sell_price_cents: 1300 }));
+  assert.deepEqual(one.trade.lot_allocations, [{ lot_id: "id-2", quantity: 1 }]); // oldest lot, split
+  assert.equal(one.trade.acquisition_cost_cents, 1000);
+  assert.ok(one.ledger.lots.every((x) => x.status === "open"), "partially consumed lot stays open");
+  const afterOne = replayLedger(one.ledger);
+  assert.deepEqual(afterOne.open_lots.map((x) => [x.lot_id, x.remaining_quantity]), [["id-2", 1], ["id-3", 3]]);
+  assert.equal(afterOne.current_open_exposure_cents, 1000 + 3300);
 
-  const first = must(sell(l, ctx, { quantity: 2, sell_price_cents: 1300 }));
-  assert.deepEqual(first.trade.lot_ids, ["id-2"]); // oldest lot first
-  assert.equal(first.trade.acquisition_cost_cents, 2000);
+  const three = must(sell(one.ledger, ctx, { quantity: 3, sell_price_cents: 1300 }));
+  assert.deepEqual(three.trade.lot_allocations, [{ lot_id: "id-2", quantity: 1 }, { lot_id: "id-3", quantity: 2 }]);
+  assert.equal(three.trade.acquisition_cost_cents, 1000 + 2200);
+  assert.equal(three.trade.hold_duration_hours, 8 * 24); // from the earliest consumed lot
+  assert.deepEqual(three.ledger.lots.map((x) => x.status), ["closed", "open"]);
 
-  const both = must(sell(l, ctx, { quantity: 5, sell_price_cents: 1300 }));
-  assert.deepEqual(both.trade.lot_ids, ["id-2", "id-3"]);
-  assert.equal(both.trade.acquisition_cost_cents, 2000 + 3300);
-  assert.equal(both.trade.hold_duration_hours, 8 * 24); // from the earliest consumed lot
+  const tooMany = sell(three.ledger, ctx, { quantity: 2 });
+  assert.equal(tooMany.ok, false);
+  assert.match(tooMany.errors[0], /only 1 unit/);
+  const last = must(sell(three.ledger, ctx, { quantity: 1, sell_price_cents: 1300 }));
+  assert.ok(last.ledger.lots.every((x) => x.status === "closed"));
+  assert.equal(replayLedger(last.ledger).open_lots.length, 0);
+});
 
-  const replay = replayLedger(both.ledger);
-  assert.equal(replay.ok, true);
-  assert.equal(replay.open_lots.length, 0);
-  assert.ok(both.ledger.lots.every((x) => x.status === "closed"));
+test("v1 ledgers migrate losslessly to v2 (whole-lot trades → allocations, unversioned)", () => {
+  const v1 = {
+    schema_version: 1,
+    next_seq: 4,
+    lots: [{ lot_id: "L", seq: 2, canonical_item_id: "A", quantity: 2, buy_market: "csfloat", buy_price_cents: 1000, buy_timestamp: iso(T0 + day), minimum_hold_until: iso(T0 + 8 * day), status: "closed", funding_source: "usd_cash", recorded_at: NOW }],
+    trades: [],
+    adjustments: [{ adjustment_id: "D", seq: 1, kind: "cash", amount_cents: 10000, from_banked: false, timestamp: iso(T0), note: "", recorded_at: NOW }],
+  };
+  const ctx = { nowIso: NOW, newId: ids() };
+  // Build the v1 trade with the v2 engine, then strip it back to v1 shape.
+  const v2sell = must(sell({ ...v1, lots: [{ ...v1.lots[0], status: "open" }] }, ctx, { canonical_item_id: "A", quantity: 2, sell_price_cents: 1300 }));
+  const { lot_allocations: alloc, receipt_net_cents: _r, strategy_version: _s, signal_version: _g, fee_model_version: _f, parser_version: _p, ...rest } = v2sell.trade;
+  v1.trades.push({ ...rest, seq: 3, lot_ids: alloc.map((a) => a.lot_id) });
+  const back = importLedger(JSON.stringify({ format: "skin-arb-terminal-ledger", schema_version: 1, ledger: v1, circuit_breaker_triggered_at: null }));
+  assert.equal(back.ok, true, JSON.stringify(back.errors));
+  assert.equal(back.migrated_from, 1);
+  assert.equal(back.ledger.schema_version, 2);
+  assert.deepEqual(back.ledger.trades[0].lot_allocations, [{ lot_id: "L", quantity: 2 }]);
+  assert.equal(back.ledger.trades[0].strategy_version, "unversioned");
+  const b = computeBalances(back.ledger, {});
+  assert.equal(b.usd_cash_balance_cents, 10000 - 2000 + back.ledger.trades[0].net_sale_proceeds_cents);
+});
+
+test("reserved cash is an earmark inside cash: buys and withdrawals can't use it", () => {
+  let { ledger, ctx } = setup(10000);
+  ledger = must(recordAdjustment(ledger, { kind: "reserve", amount_cents: 6000, timestamp: iso(T0 + 1000) }, ctx)).ledger;
+  const b = computeBalances(ledger, {});
+  assert.deepEqual([b.usd_cash_balance_cents, b.reserved_cash_cents, b.available_cash_cents], [10000, 6000, 4000]);
+  assert.equal(buy(ledger, ctx, { buy_price_cents: 4001 }).ok, false);
+  assert.equal(recordAdjustment(ledger, { kind: "cash", amount_cents: -4001, timestamp: iso(T0 + 2000) }, ctx).ok, false);
+  assert.equal(recordAdjustment(ledger, { kind: "reserve", amount_cents: 4001, timestamp: iso(T0 + 2000) }, ctx).ok, false);
+  assert.equal(recordAdjustment(ledger, { kind: "release", amount_cents: 6001, timestamp: iso(T0 + 2000) }, ctx).ok, false);
+  ledger = must(recordAdjustment(ledger, { kind: "release", amount_cents: 6000, timestamp: iso(T0 + 2000) }, ctx)).ledger;
+  must(buy(ledger, ctx, { buy_price_cents: 10000 }));
+});
+
+test("versions, receipts and reversal incidents are recorded and synced as REAL evidence rows", () => {
+  const { ledger: l0, ctx } = setup(10000);
+  const l1 = must(recordBuy(l0, { canonical_item_id: "A", quantity: 1, buy_market: "csfloat", buy_price_cents: 1000, buy_timestamp: iso(T0 + day) }, { ...ctx, strategyVersion: "strat-abc" })).ledger;
+  const s = must(recordSell(l1, { canonical_item_id: "A", quantity: 1, sell_market: "csfloat", sell_price_cents: 1200, sell_timestamp: iso(T0 + 9 * day), payout_rail: "bank", receipt_net_cents: 1150 }, { ...ctx, versions: { signal_version: "signal-v1", parser_version: "csfloat_listings@1" } }));
+  assert.equal(s.trade.strategy_version, "strat-abc");
+  assert.equal(s.trade.fee_model_version, "fees-v1@2026-09-27");
+  assert.equal(s.trade.receipt_net_cents, 1150);
+  assert.equal(s.trade.net_sale_proceeds_cents, 1158, "accounting uses the fee model; the receipt is kept for calibration");
+  const inc = must(recordIncident(s.ledger, { trade_id: s.trade.trade_id, timestamp: iso(T0 + 10 * day), note: "buyer reversed" }, ctx));
+  const rows = realTradesForSync(inc.ledger);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].reversal_incident, true);
+  assert.equal(rows[0].strategy_version, "strat-abc");
+  assert.equal(recordIncident(s.ledger, { trade_id: "nope", timestamp: iso(T0 + 10 * day) }, ctx).ok, false);
 });
 
 test("reinvestment: 0% banked below $100 deployable, floor(30%) at/above", () => {
@@ -171,7 +226,7 @@ test("realized losses never reduce banked profit; banked is never spent implicit
   const free = b.free_cash_cents;
   const tooBig = buy(loss.ledger, ctx, { buy_price_cents: free + 1, buy_timestamp: iso(T0 + 19 * day) });
   assert.equal(tooBig.ok, false);
-  assert.match(tooBig.errors[0], /banked profit is never spent implicitly/);
+  assert.match(tooBig.errors[0], /banked profit and reserved cash are never spent implicitly/);
   const redeployed = must(
     recordAdjustment(loss.ledger, { kind: "bank_redeploy", amount_cents: 47, timestamp: iso(T0 + 19 * day) }, ctx),
   ).ledger;

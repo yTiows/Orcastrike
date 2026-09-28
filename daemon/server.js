@@ -90,13 +90,13 @@ export function createDaemonServer({ root, port, routes, log = () => {} }) {
         throw new HttpError(req.method === "GET" ? 404 : 405, req.method === "GET" ? "not found" : "method not allowed");
       }
       let body = null;
+      const sameOrigin = selfOrigins.has(req.headers.origin ?? "");
       if (req.method !== "GET") {
-        const origin = req.headers.origin;
-        if (!route.allowCrossOrigin && !selfOrigins.has(origin ?? "")) throw new HttpError(403, "writes are accepted only from this origin");
+        if (!route.allowCrossOrigin && !sameOrigin) throw new HttpError(403, "writes are accepted only from this origin");
         if (!(req.headers["content-type"] ?? "").startsWith("application/json")) throw new HttpError(415, "content-type must be application/json");
         body = await readJson(req);
       }
-      const out = await route.handler({ url, query: url.searchParams, body, match: typeof route.path === "string" ? null : url.pathname.match(route.path) });
+      const out = await route.handler({ url, query: url.searchParams, body, headers: { sameOrigin }, match: typeof route.path === "string" ? null : url.pathname.match(route.path) });
       if (out && typeof out === "object" && "status" in out && "body" in out) return send(res, out.status, out.body);
       return send(res, 200, out);
     } catch (err) {

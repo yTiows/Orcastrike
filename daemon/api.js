@@ -167,8 +167,8 @@ export function coreRoutes(ctx) {
       handler: ({ body }) => {
         const incoming = body?.settings;
         if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) throw new HttpError(400, "body.settings must be an object");
-        const stored = getSettings(db);
-        delete stored["watchlist.items"];
+        const userKeys = new Set(SCHEMA.filter((e) => e.class === "user_setting").map((e) => e.key));
+        const stored = Object.fromEntries(Object.entries(getSettings(db)).filter(([k]) => userKeys.has(k)));
         const merged = { ...stored, ...incoming };
         const v = validateResearchSettings(merged);
         if (!v.ok) return { status: 422, body: { errors: v.errors, warnings: v.warnings } };

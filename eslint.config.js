@@ -8,7 +8,7 @@ export default [
     files: ["**/*.js", "**/*.mjs"],
     languageOptions: { ecmaVersion: 2024, sourceType: "module" },
     rules: {
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", destructuredArrayIgnorePattern: "^_" }],
       eqeqeq: ["error", "always"],
       "no-implicit-coercion": "error",
       "prefer-const": ["error", { destructuring: "all" }],

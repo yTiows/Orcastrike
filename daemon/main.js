@@ -11,11 +11,13 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RESEARCH_DEFAULTS, validateResearchSettings } from "../config/settings-schema.js";
+import { RESEARCH_DEFAULTS, SCHEMA, validateResearchSettings } from "../config/settings-schema.js";
 import { coreRoutes } from "./api.js";
 import { researchRoutes } from "./api-research.js";
 import { evidenceRoutes, syncRealTrades } from "./api-evidence.js";
 import { closePaperTrades, openPaperTrades, shouldPaperTrade } from "./paper.js";
+import { controlRoutes } from "./api-control.js";
+import { runAutopilot } from "./autopilot.js";
 import { Engine } from "./engine.js";
 import { getSettings, integrityCheck, migrate, openDb, parserStatuses, purgeRawPayloads, recordQualityEvent } from "./db.js";
 import { UpstreamClient } from "./http-client.js";
@@ -27,9 +29,15 @@ import { loadVerification, syncParserVersions } from "./verification.js";
 const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), ".."));
 export const DAEMON_VERSION = "orcastrike-daemon@1";
 
+// Only schema-classified user settings are validated as settings; other rows in the settings
+// table are daemon state (watchlist, ledger sync snapshot, kill switch) and never "settings".
+export function userSettingOverrides(stored) {
+  const keys = new Set(SCHEMA.filter((e) => e.class === "user_setting").map((e) => e.key));
+  return Object.fromEntries(Object.entries(stored).filter(([k]) => keys.has(k)));
+}
+
 export function effectiveConfig(db) {
-  const stored = getSettings(db);
-  delete stored["watchlist.items"];
+  const stored = userSettingOverrides(getSettings(db));
   const v = validateResearchSettings(stored);
   return v.ok ? { cfg: v.effective, errors: [], warnings: v.warnings } : { cfg: RESEARCH_DEFAULTS, errors: [`stored settings rejected, defaults in force: ${v.errors.join("; ")}`], warnings: [] };
 }
@@ -83,8 +91,9 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     const rail = getSettings(db)["ui.csfloat_payout_rail"] ?? "bank";
     if (shouldPaperTrade(cfg)) openPaperTrades(db, cycle, (o, itemId) => engine.persistForce(o, itemId), Date.now());
     closePaperTrades(db, cfg, Date.now(), { rail });
+    runAutopilot(db, cycle, cfg, Date.now(), (o, itemId) => engine.persistForce(o, itemId));
   });
-  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...evidenceRoutes(ctx), ...researchRoutes(ctx), ...coreRoutes(ctx)];
+  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...controlRoutes(ctx), ...evidenceRoutes(ctx), ...researchRoutes(ctx), ...coreRoutes(ctx)];
   const server = createDaemonServer({ root: ROOT, port, routes, log });
   await new Promise((r) => server.listen(port, "127.0.0.1", r));
 

@@ -190,3 +190,33 @@ test("evidence report over HTTP: SYNTHETIC runs reach no evidence level; regime 
   const real = await (await fetch(`${base}/api/v2/real-trades`)).json();
   assert.equal(real.kind, "REAL");
 });
+
+test("regression: daemon state rows (ledger sync, watchlist) are not validated as settings", async () => {
+  const s = await (await fetch(`${base}/api/v2/settings`)).json();
+  assert.deepEqual(s.errors, [], "ledger.capital_snapshot / watchlist.items must not invalidate user settings");
+  const h = await (await fetch(`${base}/api/v2/health`)).json();
+  assert.deepEqual(h.settings_errors, []);
+});
+
+test("control API: L2/L3 rejected; kill switch engage is always accepted, release needs origin + confirm; UMBRA needs the phrase", async () => {
+  const l3 = await post("/api/v2/automation", { level: "L3" });
+  assert.equal(l3.status, 422);
+  assert.match((await l3.json()).errors[0], /UNVERIFIED/);
+  assert.equal((await post("/api/v2/automation", { level: "L1" })).status, 200);
+  const engage = await post("/api/v2/kill-switch", { engaged: true, reason: "test" }, "https://elsewhere.example");
+  assert.equal(engage.status, 200);
+  assert.equal((await engage.json()).automation.kill_switch.engaged, true);
+  assert.equal((await post("/api/v2/kill-switch", { engaged: false, confirm: true }, "https://elsewhere.example")).status, 403);
+  assert.equal((await post("/api/v2/kill-switch", { engaged: false })).status, 422);
+  assert.equal((await post("/api/v2/kill-switch", { engaged: false, confirm: true })).status, 200);
+  const noPhrase = await post("/api/v2/umbra", { action: "activate", bankroll_cents: 50000 });
+  assert.equal(noPhrase.status, 422);
+  const u = await post("/api/v2/umbra", { action: "activate", bankroll_cents: 50000, override_phrase: "unproven edge" });
+  assert.equal(u.status, 200);
+  const st = await u.json();
+  assert.equal(st.umbra.active, true);
+  assert.equal(st.umbra.unproven, true);
+  assert.equal(st.umbra.grants_execution, false);
+  assert.equal(st.push_notifications.state, "BLOCKED");
+  assert.equal((await post("/api/v2/umbra", { action: "deactivate" })).status, 200);
+});
