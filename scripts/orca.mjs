@@ -207,7 +207,7 @@ function runTests() {
 function installDevTools({ force = false } = {}) {
   const st = installState();
   if (!force && !st.needed) {
-    say(`✔ Dev tools up to date (${st.reason})`);
+    say("✔ Dev tools up to date");
     return true;
   }
   if (!has("npm")) {
