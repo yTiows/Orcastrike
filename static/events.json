@@ -1,0 +1,72 @@
+[
+  {
+    "type": "major",
+    "name": "IEM Cologne Major 2026",
+    "start_date": "2026-06-02",
+    "end_date": "2026-06-21",
+    "source_url": "https://en.wikipedia.org/wiki/IEM_Cologne_Major_2026",
+    "retrieval_date": "2026-09-27",
+    "confidence": "medium",
+    "methodology": "Dates taken from a web-search result summary citing source_url; the page itself could not be fetched from the build environment (egress policy). Consistent with the Liquipedia Majors listing in the same results. Re-verify against source_url."
+  },
+  {
+    "type": "major",
+    "name": "StarLadder Budapest Major 2025",
+    "start_date": "2025-11-24",
+    "end_date": "2025-12-14",
+    "source_url": "https://liquipedia.net/counterstrike/StarLadder/2025/Major",
+    "retrieval_date": "2026-09-27",
+    "confidence": "medium",
+    "methodology": "Dates taken from a web-search result summary citing source_url and https://en.wikipedia.org/wiki/StarLadder_Budapest_Major_2025; pages not fetched directly (egress policy). Re-verify against source_url."
+  },
+  {
+    "type": "major",
+    "name": "BLAST.tv Austin Major 2025",
+    "start_date": "2025-06-03",
+    "end_date": "2025-06-22",
+    "source_url": "https://liquipedia.net/counterstrike/BLAST/Major/2025/Austin",
+    "retrieval_date": "2026-09-27",
+    "confidence": "medium",
+    "methodology": "Dates taken from a web-search result summary citing source_url and https://en.wikipedia.org/wiki/Blast_Austin_Major_2025; pages not fetched directly (egress policy). Re-verify against source_url."
+  },
+  {
+    "type": "major",
+    "name": "PGL Singapore Major 2026",
+    "start_date": "2026-11-25",
+    "end_date": "2026-12-13",
+    "source_url": "https://www.redbull.com/in-en/majors-counter-strike-guide",
+    "retrieval_date": "2026-09-27",
+    "confidence": "low",
+    "methodology": "Upcoming event; dates from a single secondary source (search-result summary of source_url), not fetched directly. Low source certainty until confirmed by the organizer or Liquipedia."
+  },
+  {
+    "type": "case_release",
+    "name": "Fever Case release",
+    "start_date": "2025-03-31",
+    "end_date": "2025-03-31",
+    "source_url": "https://cs.money/blog/cs-go-skins/all-csgo-weapon-cases-release-dates/",
+    "retrieval_date": "2026-09-27",
+    "confidence": "medium",
+    "methodology": "Release date from a web-search result summary aggregating case-list pages including source_url; page not fetched directly (egress policy). Re-verify against source_url."
+  },
+  {
+    "type": "case_release",
+    "name": "Gallery Case release",
+    "start_date": "2024-10-02",
+    "end_date": "2024-10-02",
+    "source_url": "https://cs.money/blog/cs-go-skins/all-csgo-weapon-cases-release-dates/",
+    "retrieval_date": "2026-09-27",
+    "confidence": "medium",
+    "methodology": "Release date from a web-search result summary aggregating case-list pages including source_url; page not fetched directly (egress policy). Re-verify against source_url."
+  },
+  {
+    "type": "case_release",
+    "name": "Kilowatt Case release",
+    "start_date": "2024-02-06",
+    "end_date": "2024-02-06",
+    "source_url": "https://cs.money/blog/cs-go-skins/all-csgo-weapon-cases-release-dates/",
+    "retrieval_date": "2026-09-27",
+    "confidence": "medium",
+    "methodology": "Release date from a web-search result summary aggregating case-list pages including source_url; page not fetched directly (egress policy). Re-verify against source_url."
+  }
+]

@@ -47,12 +47,14 @@ Shipped app (static, no framework, no bundler):
   reinvestment rule, export/import
 - `js/backtest.js` — single-market historical simulation (historical context only); cross-market verdict
 - `js/events.js` — event schema validation, 7d-before/after price delta
-- `ui/dashboard.js`, `ui/scanner-table.js`, `ui/ledger-view.js`, `ui/events-view.js`, `ui/settings-view.js`
+- `js/app.js` — controller/bootstrap (loads state, derives views, routes UI actions)
+- `ui/overview.js`, `ui/opportunities.js`, `ui/portfolio.js`, `ui/markets.js`, `ui/settings-view.js`, shared `ui/components.js` (v2.2 layout, DECISIONS D-55)
 - `config/defaults.js` (deep-frozen), `config/fees.js`
 - `static/events.json`, `static/watchlist-starter.json`
 
 Backend:
-- `worker/index.js` — Cloudflare Worker: `/api/health`, `/api/quote`, `/api/history`, `/api/fx`.
+- `worker/index.js` — Worker entry; exports only the default handler (DECISIONS D-29).
+- `worker/lib.js` — implementation: `/api/health`, `/api/quote`, `/api/history`, `/api/fx`.
   Imports `js/money.js` (wrangler/esbuild bundles it) so ingestion conversion uses the same code.
 - `wrangler.toml`
 
@@ -100,6 +102,63 @@ Dev: eslint 10.11.0, @eslint/js 10.0.1, globals 17.12.0, wrangler 4.141.0 (all p
 13. Live smoke test — **blocked (depends on 12)**
 14. Finalize docs, check REQUIREMENTS.md rows
 
-## Status
+## Status (2026-09-27)
 
-See CHANGELOG.md for what was completed. Final state is recorded at the bottom of REQUIREMENTS.md.
+Steps 1–11 and 14 done. Steps 12–13 blocked on credentials (see REQUIREMENTS.md). CHANGELOG.md
+lists what changed.
+
+## Deploy runbook (Steps 12–13, run where credentials and network exist)
+
+```sh
+npm ci
+npm run check && npm run audit:secrets        # lint + 65 tests + P0-9 audit; must all pass
+export CLOUDFLARE_API_TOKEN=...  CLOUDFLARE_ACCOUNT_ID=...   # shell only, never a file in the repo
+npx wrangler secret put CSFLOAT_API_KEY        # optional; omit → CSFloat reports NOT_CONFIGURED
+npm run deploy:worker                          # prints https://skin-arb-terminal-proxy.<acct>.workers.dev
+# set DEFAULTS.WORKER_BASE_URL in config/defaults.js to that URL (or set it per browser in Settings)
+npx wrangler pages project create skin-arb-terminal --production-branch main   # first time only
+npm run deploy:pages                           # uploads dist/ only → https://skin-arb-terminal.pages.dev
+```
+
+Smoke test against the live Worker (`W=https://…workers.dev`):
+
+```sh
+curl -s "$W/api/health"                                   # csfloat: CONFIGURED | NOT_CONFIGURED
+curl -s "$W/api/quote?source=steam&item=AK-47%20%7C%20Redline%20(Field-Tested)"     # AVAILABLE or explicit state
+curl -s "$W/api/quote?source=skinport&item=AK-47%20%7C%20Redline%20(Field-Tested)"  # price_usd_cents in USD, listing_depth null
+curl -s "$W/api/quote?source=csfloat&item=AK-47%20%7C%20Redline%20(Field-Tested)"   # NOT_CONFIGURED when no key; AVAILABLE with key
+curl -s "$W/api/history?source=steam&item=AK-47%20%7C%20Redline%20(Field-Tested)"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$W/api/quote"                     # 405
+curl -s -i "$W/api/health" | grep -i -E "authorization|set-cookie" && echo LEAK || echo "no auth headers"
+```
+
+# v2: research and evidence system (2026-09-28)
+
+## Architecture in one paragraph
+
+The **daemon** (`daemon/`, Node ≥ 22.13, built-in `node:sqlite`, no new npm dependencies) is the primary data plane. It samples Steam, Skinport, CSFloat and Frankfurter within per-host token buckets, stores append-only observations in `.orcastrike-data/orcastrike.sqlite`, builds snapshot groups, computes opportunities with a full trace, runs forward paper trading, and serves the UI plus a JSON contract on `http://127.0.0.1:8790`. The Cloudflare **Worker** stays as the thin v1 fallback. The **browser** keeps the ledger (IndexedDB) and syncs real trades and capital to the daemon for evidence. ARCHITECTURE_DELTA.md has the details, EVIDENCE.md the gates, CONFIGURATION.md every setting, and FAILURE_STATES.md what happens when things break.
+
+## Install, run, update
+
+SETUP.md is the step-by-step guide. In short: `scripts/orca.mjs` (wrapped by `Orcastrike.cmd`, `orcastrike.sh` and `npm start` / `npm run setup|update|stop|doctor`) starts the daemon and opens the UI, updates by fast-forward with a database backup first, and diagnoses the installation. Evidence needs calendar time: `hold_adverse_move` needs 30 snapshot pairs H days apart (7 days minimum), and SIGNAL_EVIDENCE needs ≥ 14 days plus ≥ 30 closed paper trades. Until `node scripts/contract_test.mjs` passes on a real network, every parser is UNVERIFIED and **no opportunity can be ELIGIBLE** (D-38).
+
+## Browser smoke test (not in `npm test`, D-44)
+
+```sh
+npm i -g playwright@1.56.1 && npx playwright install chromium   # once, if not installed
+npm run smoke:browser                       # real Chromium against a SYNTHETIC daemon; 44 checks
+```
+
+Screenshots go to `reports/browser-smoke/` (git-ignored). `report.json` is committed.
+
+## Dedicated trading account (security)
+
+Use a **separate Steam account and separate marketplace accounts that hold only the inventory being traded**, never your main inventory. The app never stores Steam credentials, cookies or authenticator data (P0-2), and it can't execute anything (C1). A dedicated account still limits the damage of a compromised marketplace session, a mis-click on a staged link, or a trade reversal. Give the CSFloat API key only to the daemon's environment (or `wrangler secret put` for the Worker). Never paste it into the UI, a file in the repo, or a chat.
+
+## Env vars (v2 additions)
+
+CONFIGURATION.md ("Environment variables") is generated from the code and is authoritative: `CSFLOAT_API_KEY` (daemon env or Worker secret), `ORCASTRIKE_PORT`, `ORCASTRIKE_DATA_DIR`, `ORCASTRIKE_ENGINE_INTERVAL_MS`, `ORCASTRIKE_CONTRACT_REPORT`. Test only: `ORCASTRIKE_SYNTHETIC` and `ORCASTRIKE_UPSTREAM_OVERRIDE`, which is loopback-only and refuses to start without `ORCASTRIKE_SYNTHETIC=1`. `NTFY_TOPIC` is read by nothing (notifications BLOCKED).
+
+## Status (2026-09-28)
+
+Phases 0–5 are implemented and tested against SYNTHETIC inputs. Live verification (PH0-LIVE), daemon placement (PH0-PLACE), deploy, L2/L3 and ntfy are BLOCKED or UNVERIFIED. REQUIREMENTS.md has one status per row.

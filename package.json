@@ -1,22 +1,31 @@
 {
   "name": "skin-arb-terminal",
-  "version": "1.0.0",
+  "version": "2.2.1",
   "private": true,
   "description": "Read-only CS2 skin cross-market spread scanner + user-recorded ledger. Displays and records; never executes trades.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
-    "test": "node --test tests/",
+    "start": "node --disable-warning=ExperimentalWarning scripts/orca.mjs start",
+    "stop": "node --disable-warning=ExperimentalWarning scripts/orca.mjs stop",
+    "setup": "node --disable-warning=ExperimentalWarning scripts/orca.mjs setup",
+    "update": "node --disable-warning=ExperimentalWarning scripts/orca.mjs update",
+    "doctor": "node --disable-warning=ExperimentalWarning scripts/orca.mjs doctor",
+    "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.js\"",
     "lint": "eslint .",
     "check": "npm run lint && npm test",
     "audit:secrets": "node scripts/secret-scan.mjs",
     "package:pages": "node scripts/package-pages.mjs",
+    "daemon": "node --disable-warning=ExperimentalWarning daemon/main.js",
     "dev:worker": "wrangler dev",
     "dev:web": "npm run package:pages && wrangler pages dev dist --port 8788",
     "deploy:worker": "wrangler deploy",
-    "deploy:pages": "npm run package:pages && wrangler pages deploy dist --project-name skin-arb-terminal"
+    "deploy:pages": "npm run package:pages && wrangler pages deploy dist --project-name skin-arb-terminal",
+    "contract": "node scripts/contract_test.mjs",
+    "netcheck": "node scripts/netcheck.mjs",
+    "smoke:browser": "node --disable-warning=ExperimentalWarning scripts/browser-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

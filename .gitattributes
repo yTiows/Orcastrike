@@ -1,0 +1,7 @@
+# LF everywhere, on every platform (Windows clones otherwise get CRLF, which breaks byte-exact
+# checks such as the generated CONFIGURATION.md and the .gitignore parsing in the secret scan).
+* text=auto eol=lf
+# Batch files keep their CRLF bytes as committed (no conversion), so ZIP downloads get CRLF too.
+*.cmd -text
+*.png binary
+*.sqlite binary

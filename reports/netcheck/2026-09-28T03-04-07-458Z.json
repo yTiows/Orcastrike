@@ -1,0 +1,75 @@
+{
+  "measured_at": "2026-09-28T03:04:07.458Z",
+  "host_label": "claude-build-container",
+  "platform": "linux",
+  "node": "v22.22.2",
+  "egress_proxy_configured": true,
+  "samples_per_target": 2,
+  "targets": [
+    {
+      "source": "steam",
+      "host": "steamcommunity.com",
+      "dns": {
+        "ok": true,
+        "ms": 20,
+        "family": 4
+      },
+      "statuses": {
+        "403": 2
+      },
+      "latency_ms_p50": 20,
+      "latency_ms_p90": 141,
+      "rate_limited": false,
+      "verdict": "BLOCKED"
+    },
+    {
+      "source": "skinport",
+      "host": "api.skinport.com",
+      "dns": {
+        "ok": true,
+        "ms": 25,
+        "family": 4
+      },
+      "statuses": {
+        "403": 2
+      },
+      "latency_ms_p50": 32,
+      "latency_ms_p90": 100,
+      "rate_limited": false,
+      "verdict": "BLOCKED"
+    },
+    {
+      "source": "csfloat",
+      "host": "csfloat.com",
+      "dns": {
+        "ok": true,
+        "ms": 22,
+        "family": 4
+      },
+      "statuses": {
+        "403": 2
+      },
+      "latency_ms_p50": 29,
+      "latency_ms_p90": 121,
+      "rate_limited": false,
+      "verdict": "BLOCKED"
+    },
+    {
+      "source": "frankfurter",
+      "host": "api.frankfurter.dev",
+      "dns": {
+        "ok": true,
+        "ms": 22,
+        "family": 4
+      },
+      "statuses": {
+        "403": 2
+      },
+      "latency_ms_p50": 14,
+      "latency_ms_p90": 28,
+      "rate_limited": false,
+      "verdict": "BLOCKED"
+    }
+  ],
+  "placement_verdict": "UNSUITABLE: steam, skinport, csfloat, frankfurter not cleanly reachable"
+}

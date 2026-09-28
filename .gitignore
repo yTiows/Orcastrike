@@ -7,3 +7,10 @@ coverage/
 .wrangler/
 dist/
 .dev.vars
+.orcastrike-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Browser smoke screenshots are regenerated per run (scripts/browser-smoke.mjs); report.json is kept.
+reports/browser-smoke/*.png

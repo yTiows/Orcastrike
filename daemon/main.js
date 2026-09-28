@@ -1,0 +1,208 @@
+#!/usr/bin/env node
+// Orcastrike daemon: primary data plane. Samples upstream sources within rate limits, stores
+// append-only observations in SQLite, and serves the UI + JSON contract on 127.0.0.1.
+//
+//   node daemon/main.js                       # http://127.0.0.1:8790
+//   ORCASTRIKE_PORT=8791 ORCASTRIKE_DATA_DIR=/path node daemon/main.js
+//   CSFLOAT_API_KEY=... node daemon/main.js   # optional; secrets only via environment
+//
+// Nothing here buys, sells or lists anything.
+
+import { chmodSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { RESEARCH_DEFAULTS, SCHEMA, validateResearchSettings } from "../config/settings-schema.js";
+import { coreRoutes } from "./api.js";
+import { researchRoutes } from "./api-research.js";
+import { evidenceRoutes, syncRealTrades } from "./api-evidence.js";
+import { closePaperTrades, openPaperTrades, shouldPaperTrade } from "./paper.js";
+import { controlRoutes } from "./api-control.js";
+import { runAutopilot } from "./autopilot.js";
+import { Engine } from "./engine.js";
+import { getSettings, integrityCheck, migrate, openDb, parserStatuses, purgeRawPayloads, recordQualityEvent } from "./db.js";
+import { UpstreamClient } from "./http-client.js";
+import { makeLogger } from "./redact.js";
+import { Scheduler } from "./scheduler.js";
+import { createDaemonServer, HttpError } from "./server.js";
+import { Verifier } from "./auto-verify.js";
+import { loadLatestVerification, sourceStatus, syncParserVersions } from "./verification.js";
+
+const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), ".."));
+export const DAEMON_VERSION = "orcastrike-daemon@1";
+
+// Only schema-classified user settings are validated as settings; other rows in the settings
+// table are daemon state (watchlist, ledger sync snapshot, kill switch) and never "settings".
+export function userSettingOverrides(stored) {
+  const keys = new Set(SCHEMA.filter((e) => e.class === "user_setting").map((e) => e.key));
+  return Object.fromEntries(Object.entries(stored).filter(([k]) => keys.has(k)));
+}
+
+export function effectiveConfig(db) {
+  const stored = userSettingOverrides(getSettings(db));
+  const v = validateResearchSettings(stored);
+  return v.ok ? { cfg: v.effective, errors: [], warnings: v.warnings } : { cfg: RESEARCH_DEFAULTS, errors: [`stored settings rejected, defaults in force: ${v.errors.join("; ")}`], warnings: [] };
+}
+
+export async function startDaemon({ env = process.env, port = Number(env.ORCASTRIKE_PORT) || 8790, dataDir = env.ORCASTRIKE_DATA_DIR || join(ROOT, ".orcastrike-data"), extraRoutes = [], startScheduler = true, log = makeLogger(process.stderr, env), onShutdownRequest = null } = {}) {
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  try {
+    chmodSync(dataDir, 0o700);
+  } catch {
+    /* best effort on filesystems without POSIX modes */
+  }
+  const dbPath = join(dataDir, "orcastrike.sqlite");
+  let db;
+  try {
+    db = openDb(dbPath);
+  } catch (err) {
+    // Unreadable file: refuse to start and touch nothing. The browser ledger is unaffected.
+    throw new DatabaseUnreadableError(dbPath, err);
+  }
+  const integrity = integrityCheck(db);
+  const startedAt = new Date().toISOString();
+  const loadVerif = () => loadLatestVerification({ dataDir, override: env.ORCASTRIKE_CONTRACT_REPORT || undefined });
+  let verification = loadVerif();
+  let settingsState = effectiveConfig(db);
+
+  const ctx = {
+    db,
+    env,
+    root: ROOT,
+    startedAt,
+    getCfg: () => settingsState.cfg,
+    settingsErrors: () => settingsState.errors,
+    reloadSettings: () => (settingsState = effectiveConfig(db)),
+    verification: () => verification,
+    sourceStatus: () => sourceStatus(verification),
+    reloadVerification: () => {
+      verification = loadVerif();
+      if (integrity.ok) syncParserVersions(db, verification, new Date().toISOString());
+    },
+    parserStatus: () => parserStatuses(db),
+    dbHealth: () => ({ path_in_data_dir: "orcastrike.sqlite", schema_version: migrate(db), integrity: integrity.ok ? "ok" : "CORRUPT", degraded: !integrity.ok }),
+    log,
+  };
+
+  if (!integrity.ok) {
+    // Corrupt database: serve health + UI read-only, never sample or compute. Recovery is a
+    // restore from backup (docs: FAILURE_STATES.md).
+    log("error", `database integrity check failed: ${integrity.detail}; running DEGRADED (no sampling)`);
+  } else {
+    syncParserVersions(db, verification, startedAt);
+  }
+
+  const verifier = new Verifier({ root: ROOT, dataDir, env, log, onDone: () => ctx.reloadVerification() });
+  ctx.verifier = verifier;
+
+  const client = new UpstreamClient({ rateLimits: settingsState.cfg.ratelimit, env, log });
+  const scheduler = new Scheduler({ db, client, getCfg: ctx.getCfg, getSettings: () => getSettings(db), env, log, onAfterJob: (job, r) => ctx.onAfterJob?.(job, r) });
+  ctx.scheduler = scheduler;
+  ctx.client = client;
+
+  const engine = new Engine({ db, getCfg: ctx.getCfg, env, log });
+  ctx.engine = engine;
+  ctx.syncRealTrades = (trades) => syncRealTrades(db, trades);
+  engine.onCycle((cycle) => {
+    const cfg = ctx.getCfg();
+    const rail = getSettings(db)["ui.csfloat_payout_rail"] ?? "bank";
+    if (shouldPaperTrade(cfg)) openPaperTrades(db, cycle, (o, itemId) => engine.persistForce(o, itemId), Date.now());
+    closePaperTrades(db, cfg, Date.now(), { rail });
+    runAutopilot(db, cycle, cfg, Date.now(), (o, itemId) => engine.persistForce(o, itemId));
+  });
+  let routes = [...extraRoutes.flatMap((f) => f(ctx)), ...controlRoutes(ctx), ...evidenceRoutes(ctx), ...researchRoutes(ctx), ...coreRoutes(ctx)];
+  if (!integrity.ok) {
+    // DEGRADED: never write to a damaged file. Reads may still fail; the server turns that into 500.
+    routes = routes.map((r) =>
+      r.method === "GET"
+        ? r
+        : { ...r, handler: () => { throw new HttpError(503, "database integrity check failed; daemon is read-only (DEGRADED). See FAILURE_STATES.md"); } },
+    );
+  }
+  // `npm run stop` / `Orcastrike.cmd stop`: same-origin JSON like every write (enforced by the
+  // server), plus explicit confirmation. Works in DEGRADED mode too. Embedded use (tests) → 501.
+  routes.push({
+    method: "POST",
+    path: "/api/v2/shutdown",
+    handler: ({ body }) => {
+      if (body?.confirm !== true) throw new HttpError(422, "explicit confirmation required");
+      if (!onShutdownRequest) throw new HttpError(501, "shutdown is available only when the daemon runs as its own process");
+      setTimeout(onShutdownRequest, 50);
+      return { ok: true, stopping: true };
+    },
+  });
+  const server = createDaemonServer({ root: ROOT, port, routes, log });
+  await new Promise((r) => server.listen(port, "127.0.0.1", r));
+
+  const timers = [];
+  if (integrity.ok && startScheduler) {
+    scheduler.start(1000);
+    const purge = () => {
+      try {
+        purgeRawPayloads(db, ctx.getCfg().storage.raw_payload_retention_days, Date.now());
+      } catch (err) {
+        log("error", `raw payload purge failed: ${err.message}`);
+      }
+    };
+    purge();
+    timers.push(setInterval(purge, 6 * 3600 * 1000));
+    const runEngine = () =>
+      engine.cycleAsync().catch((err) => log("error", `engine cycle failed: ${err?.message ?? err}`));
+    runEngine();
+    timers.push(setInterval(runEngine, Number(env.ORCASTRIKE_ENGINE_INTERVAL_MS) || 30000));
+    timers.push(setInterval(() => ctx.reloadVerification(), 10 * 60 * 1000));
+    // Live verification runs by itself: now if the newest report is missing or older than a day,
+    // then whenever it gets that old again (checked hourly).
+    const verifyIfDue = (trigger) => {
+      if (!verifier.disabledReason() && verifier.due(verification.report_run_at)) verifier.run(trigger);
+    };
+    timers.push(setTimeout(() => verifyIfDue("startup"), 3000));
+    timers.push(setInterval(() => verifyIfDue("daily"), 3600 * 1000));
+  } else if (!integrity.ok) {
+    try {
+      recordQualityEvent(db, { occurred_at: startedAt, severity: "HIGH", code: "DB_INTEGRITY", detail: integrity.detail });
+    } catch {
+      /* database may not accept writes */
+    }
+  }
+
+  log("info", `${DAEMON_VERSION} listening on http://127.0.0.1:${port} (data: ${dataDir}); CSFloat ${(env.CSFLOAT_API_KEY ?? "").trim() ? "configured" : "NOT_CONFIGURED"}`);
+  const stop = async () => {
+    scheduler.stop();
+    for (const t of timers) clearInterval(t);
+    await new Promise((r) => server.close(r));
+    db.close();
+  };
+  return { ctx, server, stop, port };
+}
+
+export class DatabaseUnreadableError extends Error {
+  constructor(path, cause) {
+    super(
+      `database ${path} is unreadable (${cause?.message ?? "error"}). Nothing was modified. ` +
+        "Recovery: move the file aside (e.g. rename it to orcastrike.sqlite.corrupt) and restart for a fresh database, " +
+        "or restore a copy of the data directory. The browser ledger is separate and unaffected; the UI re-syncs it.",
+    );
+    this.name = "DatabaseUnreadableError";
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let d;
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    makeLogger(process.stderr, process.env)("info", "stopping");
+    await d.stop();
+    process.exit(0);
+  };
+  try {
+    d = await startDaemon({ onShutdownRequest: shutdown });
+  } catch (err) {
+    if (!(err instanceof DatabaseUnreadableError)) throw err;
+    makeLogger(process.stderr, process.env)("error", err.message);
+    process.exit(2);
+  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}

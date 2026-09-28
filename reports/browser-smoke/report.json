@@ -1,0 +1,249 @@
+{
+  "run_at": "2026-09-28T17:51:51.483Z",
+  "upstream": "SYNTHETIC (loopback)",
+  "browser": "chromium (headless)",
+  "passed": 48,
+  "failed": 0,
+  "results": [
+    {
+      "name": "storage: IndexedDB is primary",
+      "ok": true,
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T17:51:37.513Z; the original was kept"
+    },
+    {
+      "name": "storage: v1 localStorage ledger migrated, original kept",
+      "ok": true,
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T17:51:37.513Z; the original was kept"
+    },
+    {
+      "name": "storage: localStorage source untouched",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "storage: migrated lot visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "backup: Chromium exposes File System Access → configurable",
+      "ok": true,
+      "detail": "Daily backup: NO_DIRECTORY: choose a backup folder"
+    },
+    {
+      "name": "portfolio: Now fills the time field",
+      "ok": true,
+      "detail": "2026-09-28T17:51"
+    },
+    {
+      "name": "ledger: buy recorded",
+      "ok": true,
+      "detail": "Recorded. Tradable from 2026-09-08 10:00 UTC (Trade Protection)."
+    },
+    {
+      "name": "ledger: partial sell recorded (FIFO split)",
+      "ok": true,
+      "detail": "Recorded. $46.00 net to cash; profit $6.00; banked $1.80. | \n            AK-47 | Redline (Field-Tested)CSFloat · $20.00 each\n            1 / 3\n            $20.00\n            INSUFFICIENT_DATA\n            —\n            now\n            no price\n            UNKNOWN"
+    },
+    {
+      "name": "ledger: Steam sale shows the C4 comparison (15%-of-gross used vs Valve exact)",
+      "ok": true,
+      "detail": "2026-09-21 10:00 UTCAK-47 | Redline (Field-Tested)\n          1steam\n          $20.00$3.00\n          $17.00to Steam Wallet\n          -$3.00\n          -15.00%\n          held 480h · banked $0.00 · fees-v1@2026-09-27Per unit: 15%-of-gross $17.00 (used) vs Valve exact $17.39."
+    },
+    {
+      "name": "storage: ledger survives reload from IndexedDB",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dashboard: five separate profit figures",
+      "ok": true,
+      "detail": "\n          Realized profit REALREALIZED_NET_PROFIT\n          $3.00COMPLETE · 2 closed REAL trade(s)\n          Paper-trading profit PAPERPAPER_NET_PROFIT\n          $0.00COMPLETE · 0 CLOSED paper trade(s); 0 VOID excluded\n          Historical simulation SIMULATEDHISTORICAL_SIMULATED_PROFIT\n          U"
+    },
+    {
+      "name": "dashboard: chart area never blank without Chart.js",
+      "ok": true,
+      "detail": "Chart unavailable (Chart.js did not load). Last 1 days:\n      Date (UTC)PriceUnits sold2026-09-01$20.5012"
+    },
+    {
+      "name": "markets: price history loads without a button press",
+      "ok": true,
+      "detail": "Chart unavailable (Chart.js did not load). Last 1 days:\n      Date (UTC)PriceUnits sold2026-09-01$20.5012"
+    },
+    {
+      "name": "dashboard: Chart.js absent (CDN blocked)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "markets: every item of a refresh shows its result, and each unavailable one its reason",
+      "ok": true,
+      "detail": "(3 ok, 54 unavailable, 0 pending) [{\"state\":\"UNAVAILABLE 164 ms\",\"reason\":\"on the watchlist; nothing stored for it yet; the collector has not sent steam_listing_page yet\"},{\"state\":\"UNAVAILABLE 170 ms\",\"reason\":\"on the watchlist; nothing stored for it yet; the collector has not sent csfloat_listings yet\"},{\"state\":\"UNAVAILABLE 190 ms\",\"reason\":\"on the watchlist; nothing stored for it yet; last skinport_items request at 2026-09-28T17:51:17.649Z: OK (HTTP 200)\"}]"
+    },
+    {
+      "name": "research: evaluated pairs rendered",
+      "ok": true,
+      "detail": "8"
+    },
+    {
+      "name": "research: SYNTHETIC/UNVERIFIED data never ELIGIBLE",
+      "ok": true,
+      "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
+    },
+    {
+      "name": "research: every blocked row states its reason",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "research: SYNTHETIC label on rows",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "research: every row shows the engine's exact status",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "research: PARSER_UNVERIFIED surfaced",
+      "ok": true,
+      "detail": "\n    —\n    ▸ Kilowatt Case SYNTHETIC\n    Steam → CSFloat\n    Not enough verified data INSUFFICIENTentry_quote: no quote observation from steam\n    —\n    —\n    INSUFFICIENTCSFloat 17:51 UTC · 0s\n  "
+    },
+    {
+      "name": "research: row expands into a step-by-step trace",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "kill switch: engages from the header",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "kill switch: release needs confirmation and works",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "UMBRA: refused without evidence or the typed phrase",
+      "ok": true,
+      "detail": "SIGNAL_EVIDENCE has not passed; type \"unproven edge\" to rank anyway (ranking, L0 and L1 only; labeled UNPROVEN)"
+    },
+    {
+      "name": "UMBRA: theme applied, UNPROVEN banner, no execution",
+      "ok": true,
+      "detail": "UMBRA · ranking mode · UNPROVEN (typed override; SIGNAL_EVIDENCE not passed) · no execution"
+    },
+    {
+      "name": "UMBRA: background drift animates",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "UMBRA: palette base #06060A applied",
+      "ok": true,
+      "detail": "rgb(244, 245, 248)"
+    },
+    {
+      "name": "UMBRA: rows evaluated, and the mode grants no eligibility",
+      "ok": true,
+      "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
+    },
+    {
+      "name": "layout: no horizontal overflow at 1280px (overview)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 1280px (opportunities)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 1280px (portfolio)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 1280px (markets)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 1280px (settings)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "console: no errors, page errors or CSP violations (desktop)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "navigation: legacy #research link opens Opportunities",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reduced motion: drift disabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reduced motion: crossfade disabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "overview: with no cash, adding it is the first step and names BLOCKED_BY_TIER",
+      "ok": true,
+      "detail": "!\n    Add your starting cashUntil you do, every pair is BLOCKED_BY_TIER: tiers and position sizes are worked out from the cash you have. Takes 10 seconds.\n    Add cash"
+    },
+    {
+      "name": "overview: the Add cash step opens the cash form on Portfolio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: no horizontal overflow at 390px (overview)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 390px (opportunities)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 390px (portfolio)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 390px (markets)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "layout: no horizontal overflow at 390px (settings)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "backup: UNVERIFIED label without File System Access",
+      "ok": true,
+      "detail": "Daily backup: UNVERIFIED in this browser (the File System Access API exists only in Chromium browsers). Use Export."
+    },
+    {
+      "name": "UMBRA: deactivation restores the standard theme",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "console: no errors, page errors or CSP violations (mobile)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
