@@ -235,7 +235,7 @@ export function computeOpportunity({ item, buyMarket, sellMarket, group, obs, ex
   return finish("ELIGIBLE", null);
 }
 
-// Only rank-eligible opportunities are ranked, by rank_metric (ties: expected profit).
+// Only rank-eligible opportunities are ranked, by rank_metric (ties: expected_net_profit_cents).
 export function rankOpportunities(list) {
   return list
     .filter((o) => o.rank_eligible && o.math)
