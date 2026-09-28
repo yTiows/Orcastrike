@@ -13,6 +13,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RESEARCH_DEFAULTS, validateResearchSettings } from "../config/settings-schema.js";
 import { coreRoutes } from "./api.js";
+import { researchRoutes } from "./api-research.js";
+import { Engine } from "./engine.js";
 import { getSettings, integrityCheck, migrate, openDb, parserStatuses, purgeRawPayloads, recordQualityEvent } from "./db.js";
 import { UpstreamClient } from "./http-client.js";
 import { makeLogger } from "./redact.js";
@@ -71,7 +73,9 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
   ctx.scheduler = scheduler;
   ctx.client = client;
 
-  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...coreRoutes(ctx)];
+  const engine = new Engine({ db, getCfg: ctx.getCfg, env, log });
+  ctx.engine = engine;
+  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...researchRoutes(ctx), ...coreRoutes(ctx)];
   const server = createDaemonServer({ root: ROOT, port, routes, log });
   await new Promise((r) => server.listen(port, "127.0.0.1", r));
 
@@ -87,6 +91,15 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     };
     purge();
     timers.push(setInterval(purge, 6 * 3600 * 1000));
+    const runEngine = () => {
+      try {
+        engine.cycle();
+      } catch (err) {
+        log("error", `engine cycle failed: ${err?.message ?? err}`);
+      }
+    };
+    runEngine();
+    timers.push(setInterval(runEngine, Number(env.ORCASTRIKE_ENGINE_INTERVAL_MS) || 30000));
     timers.push(
       setInterval(() => {
         verification = loadVerification(env.ORCASTRIKE_CONTRACT_REPORT || undefined);

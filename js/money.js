@@ -160,10 +160,10 @@ export function marginBps(profitCents, costCents) {
 // Valve charges fees on top of what the seller receives: buyer pays
 // r + max(floor(r×5%),1) + max(floor(r×10%),1). Integer re-implementation of
 // CalculateAmountToSendForDesiredReceivedAmount.
-export function steamValveBuyerPays(receivedCents) {
+export function steamValveBuyerPays(receivedCents, fees = FEES) {
   assertInt(receivedCents, "receivedCents");
-  const walletBps = rateToBps(FEES.STEAM_VALVE_WALLET_FEE_PCT);
-  const pubBps = rateToBps(FEES.STEAM_VALVE_PUBLISHER_FEE_PCT);
+  const walletBps = rateToBps(fees.STEAM_VALVE_WALLET_FEE_PCT);
+  const pubBps = rateToBps(fees.STEAM_VALVE_PUBLISHER_FEE_PCT);
   const steamFee = Math.max(mulDivFloor(receivedCents, walletBps, BPS), 1);
   const publisherFee = Math.max(mulDivFloor(receivedCents, pubBps, BPS), 1);
   return receivedCents + steamFee + publisherFee;
@@ -171,53 +171,55 @@ export function steamValveBuyerPays(receivedCents) {
 
 // Largest seller-received amount whose buyer price does not exceed buyerPaysCents
 // (Valve assigns any leftover cent to the Steam fee). Equivalent of CalculateFeeAmount.
-export function steamValveSellerReceives(buyerPaysCents) {
+export function steamValveSellerReceives(buyerPaysCents, fees = FEES) {
   assertInt(buyerPaysCents, "buyerPaysCents");
-  if (buyerPaysCents < FEES.STEAM_MIN_BUYER_PRICE_CENTS) throw new MoneyError("below Steam minimum price");
+  if (buyerPaysCents < fees.STEAM_MIN_BUYER_PRICE_CENTS) throw new MoneyError("below Steam minimum price");
   let r = mulDivFloor(buyerPaysCents, 100, 115);
-  while (r > 1 && steamValveBuyerPays(r) > buyerPaysCents) r -= 1;
-  while (steamValveBuyerPays(r + 1) <= buyerPaysCents) r += 1;
+  while (r > 1 && steamValveBuyerPays(r, fees) > buyerPaysCents) r -= 1;
+  while (steamValveBuyerPays(r + 1, fees) <= buyerPaysCents) r += 1;
   return r;
 }
 
 // ---- Fee resolution per market ---------------------------------------------------
 
-export function resolvePayoutFeeBps(market, rail) {
+// `fees` is a fee model (config/fees.js shape); versions other than the default come only from
+// user-accepted calibration proposals (js/research/fee-model.js).
+export function resolvePayoutFeeBps(market, rail, fees = FEES) {
   if (market === "csfloat") {
-    const rate = FEES.CSFLOAT_PAYOUT_FEE_RATE[rail];
+    const rate = fees.CSFLOAT_PAYOUT_FEE_RATE[rail];
     if (rate === undefined) throw new MoneyError(`unknown CSFloat payout rail: ${String(rail)}`);
     return rateToBps(rate);
   }
-  if (market === "skinport") return rateToBps(FEES.SKINPORT_PAYOUT_FEE_RATE);
+  if (market === "skinport") return rateToBps(fees.SKINPORT_PAYOUT_FEE_RATE);
   if (market === "steam") return 0; // proceeds stay in Steam Wallet; no payout rail
   throw new MoneyError(`unknown market: ${String(market)}`);
 }
 
 // Skinport high-tier threshold (EUR 1,000) converted to USD cents with the same FX rate
 // used at ingestion, so the comparison happens in USD (P0-6).
-export function skinportHighTierThresholdUsdCents(fxRateMicros) {
-  return eurCentsToUsdCents(FEES.SKINPORT_HIGH_TIER_THRESHOLD_EUR_CENTS, fxRateMicros);
+export function skinportHighTierThresholdUsdCents(fxRateMicros, fees = FEES) {
+  return eurCentsToUsdCents(fees.SKINPORT_HIGH_TIER_THRESHOLD_EUR_CENTS, fxRateMicros);
 }
 
 // schedule: steam/csfloat ignore it. skinport: "standard" | "over_1000eur" | "private" | "auto".
 // "auto" (scanner) picks 6% vs 8% from the unit price and needs fxRateMicros.
-export function resolveSellFee({ market, schedule = "auto", unitGrossCents, fxRateMicros }) {
+export function resolveSellFee({ market, schedule = "auto", unitGrossCents, fxRateMicros, fees = FEES }) {
   if (market === "steam") {
-    return { bps: rateToBps(FEES.STEAM_SELL_FEE), model: FEES.STEAM_FEE_MODEL, schedule: "steam" };
+    return { bps: rateToBps(fees.STEAM_SELL_FEE), model: fees.STEAM_FEE_MODEL, schedule: "steam" };
   }
-  if (market === "csfloat") return { bps: rateToBps(FEES.CSFLOAT_SELL_FEE), model: "flat_on_gross", schedule: "csfloat" };
+  if (market === "csfloat") return { bps: rateToBps(fees.CSFLOAT_SELL_FEE), model: "flat_on_gross", schedule: "csfloat" };
   if (market === "skinport") {
     let resolved = schedule;
     if (schedule === "auto") {
       if (!Number.isSafeInteger(fxRateMicros) || fxRateMicros <= 0) {
         throw new MoneyError("Skinport fee tier needs the FX rate used at ingestion");
       }
-      resolved = unitGrossCents >= skinportHighTierThresholdUsdCents(fxRateMicros) ? "over_1000eur" : "standard";
+      resolved = unitGrossCents >= skinportHighTierThresholdUsdCents(fxRateMicros, fees) ? "over_1000eur" : "standard";
     }
     const rate = {
-      standard: FEES.SKINPORT_SELL_FEE_STANDARD,
-      over_1000eur: FEES.SKINPORT_SELL_FEE_OVER_1000EUR,
-      private: FEES.SKINPORT_SELL_FEE_PRIVATE_LISTING,
+      standard: fees.SKINPORT_SELL_FEE_STANDARD,
+      over_1000eur: fees.SKINPORT_SELL_FEE_OVER_1000EUR,
+      private: fees.SKINPORT_SELL_FEE_PRIVATE_LISTING,
     }[resolved];
     if (rate === undefined) throw new MoneyError(`unknown Skinport fee schedule: ${String(schedule)}`);
     return { bps: rateToBps(rate), model: "flat_on_gross", schedule: resolved };
@@ -237,6 +239,7 @@ export function computeSale({
   sellFeeBps,
   payoutFeeBps,
   sellFeeModel = "flat_on_gross",
+  fees = FEES,
 }) {
   const invalid = (reason) => ({ state: "INVALID", reason });
   if (!Number.isSafeInteger(quantity) || quantity < 1) return invalid("quantity must be an integer >= 1");
@@ -254,7 +257,7 @@ export function computeSale({
     let afterSellerFee;
     if (sellFeeModel === "valve_fee_on_top") {
       // Valve's fee is per listing (per unit).
-      afterSellerFee = steamValveSellerReceives(unitSellPriceCents) * quantity;
+      afterSellerFee = steamValveSellerReceives(unitSellPriceCents, fees) * quantity;
     } else if (sellFeeModel === "flat_on_gross") {
       afterSellerFee = applySellFee(gross, sellFeeBps);
     } else {

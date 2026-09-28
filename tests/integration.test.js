@@ -66,6 +66,7 @@ before(async () => {
       ORCASTRIKE_SYNTHETIC: "1",
       ORCASTRIKE_CONTRACT_REPORT: join(tmpdir(), "no-such-report.json"),
       CSFLOAT_API_KEY: FAKE_KEY,
+      ORCASTRIKE_ENGINE_INTERVAL_MS: "500",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -146,4 +147,32 @@ test("coverage and quality contracts are served", async () => {
   assert.ok(cov.plan.steam && cov.plan.skinport);
   const q = await (await fetch(`${base}/api/v2/quality`)).json();
   assert.equal(q.contract, "data_quality_event@1");
+});
+
+test("engine: SYNTHETIC data with UNVERIFIED parsers never yields an ELIGIBLE opportunity", async () => {
+  const cycle = await waitFor(async () => {
+    const r = await (await fetch(`${base}/api/v2/opportunities?all=1`)).json();
+    return r.evaluated > 0 && r.all.some((o) => o.sell_source === "csfloat" && o.buy_source === "steam") ? r : null;
+  });
+  assert.equal(cycle.ranked.length, 0);
+  assert.equal(cycle.counts.ELIGIBLE ?? 0, 0);
+  const o = cycle.all.find((x) => x.buy_source === "steam" && x.sell_source === "csfloat");
+  assert.equal(o.math, null, "no calculation from unverified inputs");
+  assert.match(o.blocked_reasons.join(" "), /PARSER_UNVERIFIED|no quote|STALE|effective age/);
+  assert.equal(o.synthetic, true);
+});
+
+test("ledger sync validates capital and stores it", async () => {
+  const bad = await post("/api/v2/ledger/sync", { capital: { usd_cash_balance_cents: 1.5 } });
+  assert.equal(bad.status, 422);
+  const ok = await post("/api/v2/ledger/sync", {
+    capital: { usd_cash_balance_cents: 9000, banked_profit_cents: 0, reserved_cash_cents: 0, open_cost_basis_cents: 0, deployable_capital_cents: 9000, steam_wallet_balance_cents: 0, deployable_capital_complete: true },
+    circuit_breaker_triggered_at: null,
+  });
+  assert.equal(ok.status, 200);
+  const cycle = await waitFor(async () => {
+    const r = await (await fetch(`${base}/api/v2/opportunities`)).json();
+    return r.capital_synced_at ? r : null;
+  });
+  assert.ok(cycle.capital_synced_at);
 });

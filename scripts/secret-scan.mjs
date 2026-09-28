@@ -89,11 +89,11 @@ for (const f of tracked) {
 // not contain credential shapes or the literal values of configured secrets.
 const dataDirs = [process.env.ORCASTRIKE_DATA_DIR, ".orcastrike-data"].filter(Boolean);
 for (const dir of dataDirs) {
-  let files = [];
+  let files;
   try {
     files = readdirSync(dir).map((f) => join(dir, f));
   } catch {
-    continue;
+    continue; // no local data directory on this machine
   }
   for (const f of files) {
     let text;
