@@ -2,8 +2,10 @@
 // Browser smoke test: real Chromium against a real daemon fed by a SYNTHETIC loopback upstream
 // (tests/helpers/synthetic-stack.js). Nothing here touches a marketplace. Checks:
 //   - localStorage v1 ledger → IndexedDB migration (non-destructive, source kept)
-//   - FIFO partial-lot sell through the ledger forms
-//   - Research tab: SYNTHETIC/UNVERIFIED rows never ELIGIBLE, blocked reason on every row
+//   - FIFO partial-lot sell through the Portfolio forms (opened on demand, "Now" fills the time)
+//   - Opportunities: SYNTHETIC/UNVERIFIED rows never ELIGIBLE, blocked reason on every row
+//   - Overview: five profit figures; the "Add cash" next step opens the cash form
+//   - legacy #research / #ledger links land on the renamed pages
 //   - UMBRA via the typed override: theme applied, UNPROVEN banner, reduced motion respected
 //   - kill switch engage/release
 //   - Chart.js CDN blocked → table fallback, rest of the app unaffected
@@ -63,7 +65,7 @@ const V1_LEDGER = {
 const stack = await startSyntheticStack({ engineIntervalMs: 1000 });
 const { chromium } = await loadPlaywright();
 const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
-const TABS = ["dashboard", "research", "scanner", "ledger", "events", "settings"];
+const TABS = ["overview", "opportunities", "portfolio", "markets", "settings"];
 
 async function newPage({ width = 1280, height = 900, reducedMotion = "no-preference", noFsa = false } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, reducedMotion });
@@ -100,6 +102,33 @@ async function gotoTab(page, tab) {
   await page.waitForSelector(`[data-view="${tab}"]:not([hidden])`);
 }
 
+// Portfolio forms are hidden until their button opens them.
+async function openForm(page, name) {
+  if (await page.isHidden(`#f-${name}`)) await page.click(`[data-open="${name}"]`);
+  await page.waitForSelector(`#f-${name}:not([hidden])`);
+}
+
+async function openSection(page, id) {
+  await page.evaluate((sel) => { document.querySelector(sel).open = true; }, `#${id}`);
+}
+
+async function showAllPairs(page) {
+  await page.click("#rs-showall");
+  await page.waitForFunction(() => document.querySelector("#rs-showall")?.getAttribute("aria-pressed") === "true");
+}
+
+// Status as the page shows it: the exact engine code beside the plain-language label.
+const readRows = (page) =>
+  page.$$eval("#rs-opps tr[data-key]", (trs) =>
+    trs.map((tr) => ({
+      key: tr.dataset.key,
+      status: tr.dataset.status,
+      shown: tr.children[3]?.querySelector(".code")?.textContent.trim(),
+      reason: tr.children[3]?.querySelector(".blocked-reason")?.textContent.trim() ?? "",
+      text: tr.textContent,
+    })),
+  );
+
 try {
   // Let the scheduler + engine produce rows before the UI looks.
   await fetch(`${stack.base}/api/v2/watchlist`, { method: "POST", headers: { "content-type": "application/json", origin: stack.base }, body: JSON.stringify({ items: [ITEM] }) });
@@ -115,7 +144,7 @@ try {
   await page.evaluate((v1) => localStorage.setItem("sat.ledger.v1", JSON.stringify(v1)), V1_LEDGER);
   await page.reload();
   await page.waitForSelector("#ledger-storage", { state: "attached" });
-  await gotoTab(page, "ledger");
+  await gotoTab(page, "portfolio");
   await page.waitForFunction(() => /indexeddb/.test(document.querySelector("#ledger-storage")?.textContent ?? ""));
   const storageText = await page.textContent("#ledger-storage");
   check("storage: IndexedDB is primary", /Storage: indexeddb/.test(storageText), storageText);
@@ -125,9 +154,14 @@ try {
   check("backup: Chromium exposes File System Access → configurable", /Daily backup: (not configured|NO_DIRECTORY|CHOSEN|SKIPPED_TODAY|WRITTEN|PERMISSION_NEEDED)/.test(await page.textContent("#backup-state")), await page.textContent("#backup-state"));
 
   // Record cash, a 3-unit buy, then sell 2: FIFO must split the lot and leave 1 open.
+  await openForm(page, "cash");
+  await page.fill("#f-cash [name=ts]", "");
+  await page.click("#f-cash [data-now]");
+  check("portfolio: Now fills the time field", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(await page.inputValue("#f-cash [name=ts]")), await page.inputValue("#f-cash [name=ts]"));
   await page.fill("#f-cash [name=amount]", "500.00");
   await page.fill("#f-cash [name=ts]", "2026-08-30T10:00");
   await page.click("#f-cash button[type=submit]");
+  await openForm(page, "buy");
   await page.fill("#f-buy [name=item]", ITEM);
   await page.fill("#f-buy [name=qty]", "3");
   await page.selectOption("#f-buy [name=market]", "csfloat");
@@ -138,6 +172,7 @@ try {
   const buyResult = await page.textContent("#f-buy .result");
   await page.waitForFunction(() => (document.querySelector("#t-lots")?.textContent ?? "").includes("Redline"), null, { timeout: 5000 }).catch(() => {});
   check("ledger: buy recorded", /^Recorded/.test(buyResult) && (await page.textContent("#t-lots")).includes("Redline"), buyResult);
+  await openForm(page, "sell");
   await page.fill("#f-sell [name=item]", ITEM);
   await page.fill("#f-sell [name=qty]", "2");
   await page.selectOption("#f-sell [name=market]", "skinport");
@@ -158,29 +193,34 @@ try {
   await page.waitForFunction(() => /Valve exact/.test(document.querySelector("#t-trades")?.textContent ?? ""), null, { timeout: 5000 }).catch(() => {});
   const steamRow = await page.locator("#t-trades tr", { hasText: "steam" }).first().textContent().catch(() => "");
   check("ledger: Steam sale shows the C4 comparison (15%-of-gross used vs Valve exact)", /\$17\.00 \(used\) vs Valve exact \$17\.39/.test(steamRow), steamRow);
-  await page.screenshot({ path: join(OUT, "ledger-desktop.png"), fullPage: true });
+  await page.screenshot({ path: join(OUT, "portfolio-desktop.png"), fullPage: true });
 
   // Persistence: a reload reads the ledger back from IndexedDB, not from the v1 copy.
   await page.reload();
-  await gotoTab(page, "ledger");
+  await gotoTab(page, "portfolio");
   await page.waitForFunction(() => (document.querySelector("#t-trades")?.textContent ?? "").includes("Redline"));
   check("storage: ledger survives reload from IndexedDB", true);
 
-  // Dashboard: CDN blocked → chart fallback; five profit figures present.
-  await gotoTab(page, "dashboard");
-  await page.waitForFunction(() => document.querySelectorAll("#dash-figures .card").length >= 5);
+  // Overview: five profit figures, each its own row. Markets: CDN blocked → chart fallback;
+  // the price history loads by itself (no button).
+  await gotoTab(page, "overview");
+  await page.waitForFunction(() => document.querySelectorAll("#dash-figures .figure-row").length >= 5);
   const figs = await page.textContent("#dash-figures");
   check("dashboard: five separate profit figures", ["REALIZED", "PAPER", "HISTORICAL", "MARK_TO_MARKET", "ESTIMATED_EXIT"].every((k) => figs.includes(k)), figs.slice(0, 300));
+  await page.screenshot({ path: join(OUT, "overview-desktop.png"), fullPage: true });
+  await gotoTab(page, "markets");
+  await page.waitForFunction(() => (document.querySelector("#dash-chart")?.textContent ?? "").trim() !== "", null, { timeout: 15000 }).catch(() => {});
   const chartText = await page.textContent("#dash-chart");
-  check("dashboard: chart area never blank without Chart.js", /Chart unavailable|No history loaded|INSUFFICIENT|UNAVAILABLE|UNVERIFIED|Loading/.test(chartText), chartText.slice(0, 200));
+  check("dashboard: chart area never blank without Chart.js", /Chart unavailable|No history|INSUFFICIENT|UNAVAILABLE|UNVERIFIED|Loading/.test(chartText), chartText.slice(0, 200));
+  check("markets: price history loads without a button press", /Chart unavailable|Date \(UTC\)/.test(chartText), chartText.slice(0, 200));
   check("dashboard: Chart.js absent (CDN blocked)", await page.evaluate(() => typeof window.Chart === "undefined"));
-  await page.screenshot({ path: join(OUT, "dashboard-desktop.png"), fullPage: true });
+  await page.screenshot({ path: join(OUT, "markets-desktop.png"), fullPage: true });
 
-  // Research: rows exist, none ELIGIBLE, every non-eligible row carries a blocked reason.
-  await gotoTab(page, "research");
-  await page.check("#rs-showall");
+  // Opportunities: rows exist, none ELIGIBLE, every non-eligible row carries a blocked reason.
+  await gotoTab(page, "opportunities");
+  await showAllPairs(page);
   await page.waitForSelector("#rs-opps tr[data-key]", { timeout: 20000 });
-  const rows = await page.$$eval("#rs-opps tr[data-key]", (trs) => trs.map((tr) => ({ status: tr.children[3]?.textContent.trim(), reason: tr.lastElementChild?.textContent.trim(), text: tr.textContent })));
+  const rows = await readRows(page);
   check("research: evaluated pairs rendered", rows.length > 0, rows.length);
   check("research: SYNTHETIC/UNVERIFIED data never ELIGIBLE", rows.every((r) => r.status !== "ELIGIBLE"), JSON.stringify(rows.map((r) => r.status)));
   check("research: every blocked row states its reason", rows.every((r) => r.reason.length > 0), JSON.stringify(rows.filter((r) => !r.reason)));
@@ -188,14 +228,13 @@ try {
   // Fidelity: the UI shows exactly the engine's status for each pair (e.g. STALE stays STALE).
   const api = await (await fetch(`${stack.base}/api/v2/opportunities?all=1&limit=400`)).json();
   const apiStatus = new Map(api.all.map((o) => [`${o.item}|${o.buy_source}|${o.sell_source}`, o.status]));
-  const uiStatus = await page.$$eval("#rs-opps tr[data-key]", (trs) => trs.map((tr) => [tr.dataset.key, tr.children[3]?.textContent.trim()]));
-  const mismatched = uiStatus.filter(([k, st]) => apiStatus.get(k) !== st);
-  check("research: every row shows the engine's exact status", uiStatus.length > 0 && mismatched.length === 0, JSON.stringify(mismatched));
-  check("research: PARSER_UNVERIFIED surfaced", rows.some((r) => /PARSER_UNVERIFIED|UNVERIFIED/.test(r.reason)), rows[0]?.reason);
+  const mismatched = rows.filter((r) => apiStatus.get(r.key) !== r.status || r.shown !== r.status).map((r) => [r.key, r.status, r.shown]);
+  check("research: every row shows the engine's exact status", rows.length > 0 && mismatched.length === 0, JSON.stringify(mismatched));
+  check("research: PARSER_UNVERIFIED surfaced", rows.some((r) => /PARSER_UNVERIFIED|UNVERIFIED/.test(r.text)), rows[0]?.text);
   await page.click("#rs-opps tr[data-key]");
   await page.waitForSelector("#rs-opps .trace-row");
   check("research: row expands into a step-by-step trace", (await page.$$("#rs-opps .trace li")).length > 0);
-  await page.screenshot({ path: join(OUT, "research-desktop.png"), fullPage: true });
+  await page.screenshot({ path: join(OUT, "opportunities-desktop.png"), fullPage: true });
 
   // Kill switch.
   await page.click("#kill-switch");
@@ -207,6 +246,7 @@ try {
 
   // UMBRA with the typed override (SIGNAL_EVIDENCE has not passed on SYNTHETIC data).
   expected.add("POST /api/v2/umbra 422");
+  await openSection(page, "rs-umbra-section");
   await page.fill("#rs-umbra-form [name=bankroll]", "500.00");
   await page.click("#rs-umbra-form button[type=submit]");
   await page.waitForFunction(() => (document.querySelector("#rs-umbra-form .result")?.textContent ?? "") !== "");
@@ -226,15 +266,15 @@ try {
   // Let the engine run an UMBRA cycle, then reload so the page fetches it.
   await new Promise((r) => setTimeout(r, 2500));
   await page.reload();
-  await gotoTab(page, "research");
-  await page.check("#rs-showall");
+  await gotoTab(page, "opportunities");
+  await showAllPairs(page);
   await page.waitForSelector("#rs-opps tr[data-key]", { timeout: 20000 });
   await page.waitForTimeout(700); // 600ms crossfade
-  const rowsU = await page.$$eval("#rs-opps tr[data-key]", (trs) => trs.map((tr) => tr.children[3]?.textContent.trim()));
-  check("UMBRA: rows evaluated, and the mode grants no eligibility", rowsU.length > 0 && rowsU.every((s) => s !== "ELIGIBLE"), JSON.stringify(rowsU));
-  await page.screenshot({ path: join(OUT, "research-umbra-desktop.png"), fullPage: true });
-  await gotoTab(page, "dashboard");
-  await page.screenshot({ path: join(OUT, "dashboard-umbra-desktop.png"), fullPage: true });
+  const rowsU = (await readRows(page)).map((r) => r.status);
+  check("UMBRA: rows evaluated, and the mode grants no eligibility", rowsU.length > 0 && rowsU.every((st) => st !== "ELIGIBLE"), JSON.stringify(rowsU));
+  await page.screenshot({ path: join(OUT, "opportunities-umbra-desktop.png"), fullPage: true });
+  await gotoTab(page, "overview");
+  await page.screenshot({ path: join(OUT, "overview-umbra-desktop.png"), fullPage: true });
 
   // Overflow on every tab, desktop.
   for (const t of TABS) {
@@ -249,6 +289,7 @@ try {
   const rm = await newPage({ reducedMotion: "reduce" });
   await rm.page.goto(`${stack.base}/#research`);
   await rm.page.waitForFunction(() => document.documentElement.dataset.mode === "umbra");
+  check("navigation: legacy #research link opens Opportunities", await rm.page.isVisible('[data-view="opportunities"]'));
   check("reduced motion: drift disabled", (await rm.page.evaluate(() => getComputedStyle(document.body, "::before").animationName)) === "none");
   check("reduced motion: crossfade disabled", (await rm.page.evaluate(() => getComputedStyle(document.body).transitionDuration)) === "0s");
   await rm.context.close();
@@ -257,22 +298,27 @@ try {
   const m = await newPage({ width: 390, height: 844, noFsa: true });
   await m.page.goto(`${stack.base}/`);
   await m.page.waitForSelector("#ledger-storage", { state: "attached" });
+  // Fresh browser profile: no cash recorded, so the Overview checklist offers it in one click.
+  await m.page.waitForSelector('#ov-steps [data-act="add-cash"]', { timeout: 10000 }).catch(() => {});
+  if (await m.page.isVisible('#ov-steps [data-act="add-cash"]')) await m.page.click('#ov-steps [data-act="add-cash"]');
+  check("overview: the Add cash step opens the cash form on Portfolio", (await m.page.isVisible('[data-view="portfolio"]')) && (await m.page.isVisible("#f-cash")));
   for (const t of TABS) {
     await gotoTab(m.page, t);
     await m.page.waitForTimeout(700); // let the 600ms theme crossfade finish before measuring/capturing
     const o = await overflow(m.page);
     check(`layout: no horizontal overflow at 390px (${t})`, o <= 0, `${o}px`);
-    if (["dashboard", "research", "ledger"].includes(t)) await m.page.screenshot({ path: join(OUT, `${t}-umbra-mobile.png`), fullPage: true });
+    if (["overview", "opportunities", "portfolio", "markets"].includes(t)) await m.page.screenshot({ path: join(OUT, `${t}-umbra-mobile.png`), fullPage: true });
   }
-  await gotoTab(m.page, "ledger");
+  await gotoTab(m.page, "portfolio");
   const bs = await m.page.textContent("#backup-state");
   check("backup: UNVERIFIED label without File System Access", /UNVERIFIED/.test(bs), bs);
   // Leave the daemon as found: UMBRA off.
-  await gotoTab(m.page, "research");
+  await gotoTab(m.page, "opportunities");
+  await openSection(m.page, "rs-umbra-section");
   await m.page.click("#rs-umbra-off");
   await m.page.waitForFunction(() => document.documentElement.dataset.mode === "standard");
   check("UMBRA: deactivation restores the standard theme", true);
-  await m.page.screenshot({ path: join(OUT, "research-mobile.png"), fullPage: true });
+  await m.page.screenshot({ path: join(OUT, "opportunities-mobile.png"), fullPage: true });
   check("console: no errors, page errors or CSP violations (mobile)", m.errors.length === 0, m.errors.join(" | "));
   await m.context.close();
 } catch (err) {

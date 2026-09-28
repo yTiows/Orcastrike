@@ -12,12 +12,16 @@
 
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PARSERS, EXPECTED_SHAPES, describeShape, diffShape, sanitizeBody } from "../daemon/contract.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = join(ROOT, "tests", "fixtures", "live");
+// ORCASTRIKE_CONTRACT_OUT (set by the daemon's automatic verification) keeps fixtures and the
+// report in the local data directory, so running the check never edits tracked files.
+const LOCAL_OUT = process.env.ORCASTRIKE_CONTRACT_OUT || null;
+const OUT = LOCAL_OUT ? resolve(LOCAL_OUT) : join(ROOT, "tests", "fixtures", "live");
+const fixturePath = (file) => (LOCAL_OUT ? relative(OUT, file).split(sep).join("/") : relative(ROOT, file).split(sep).join("/"));
 const TIMEOUT_MS = 15000;
 const ITEMS = ["AK-47 | Redline (Field-Tested)", "Revolution Case"];
 const COMMAND = "node scripts/contract_test.mjs   # optional: CSFLOAT_API_KEY=... in the environment";
@@ -103,7 +107,7 @@ async function probe(endpoint, url, { headers = {}, parseCtx = {}, requiresKey =
     }
   }
   const status = parse.status === "FAIL" || (shapeDiff && shapeDiff.missing.length) ? "FAIL" : parse.status === "PASS" ? "PASS" : "CAPTURED";
-  results.push({ endpoint, status, fixture: file.slice(ROOT.length + 1), shape_diff: shapeDiff, parse, latency_ms: res.ms });
+  results.push({ endpoint, status, fixture: fixturePath(file), shape_diff: shapeDiff, parse, latency_ms: res.ms });
   return body;
 }
 
@@ -139,7 +143,7 @@ if (listingId) {
 }
 await probe("csfloat_sales_history", `https://csfloat.com/api/v1/history/${enc(ITEMS[0])}/sales`, { headers: { authorization: key }, requiresKey: true });
 
-const report = { run_at: now.toISOString(), command: COMMAND, node: process.version, results };
+const report = { run_at: now.toISOString(), command: COMMAND, node: process.version, fixture_root: LOCAL_OUT ? "report_dir" : "repo", results };
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, "CONTRACT_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`);
 // Shipped summary for the browser (Level 1 scanner via the Worker): a source's quotes count only
@@ -149,7 +153,7 @@ const status = (ep) => {
   return r?.status === "PASS" ? "VERIFIED" : r?.status === "BLOCKED" ? "BLOCKED" : "UNVERIFIED";
 };
 const both = (a, b) => (status(a) === "VERIFIED" && status(b) === "VERIFIED" ? "VERIFIED" : status(a) === "VERIFIED" ? status(b) : status(a));
-writeFileSync(
+if (!LOCAL_OUT) writeFileSync(
   join(ROOT, "static", "parser-verification.json"),
   `${JSON.stringify(
     {

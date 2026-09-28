@@ -120,8 +120,8 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 |---|---|
 | INPUT | IndexedDB open fails or hangs; localStorage throws |
 | PROCESSING | `openStorage`: IndexedDB → localStorage fallback (separate `sat.fallback.*` keys) → in-memory store |
-| OUTPUT | `Storage: localstorage` or `Storage: memory` in the Ledger tab and status bar, with a warning. Memory mode says the ledger will be lost on reload and to export it. |
-| FAILURE | A ledger that fails validation is **not loaded** and not overwritten: the Ledger tab lists the errors and offers the raw data for download. A corrupt circuit-breaker timestamp is treated as ACTIVE. |
+| OUTPUT | `Storage: localstorage` or `Storage: memory` on the Portfolio page, with a warning in the notice bar under the header. Memory mode says the ledger will be lost on reload and to export it. |
+| FAILURE | A ledger that fails validation is **not loaded** and not overwritten: the Portfolio page lists the errors and offers the raw data for download. A corrupt circuit-breaker timestamp is treated as ACTIVE. |
 | RECOVERY | Leave private mode or allow site data, then import the last export or backup. Imports are checksum-verified, and a tampered file is rejected. |
 | TEST | `IndexedDB unavailable → localStorage fallback, with a visible warning`; `no usable storage at all → memory store; warns the ledger will be lost on reload`; `export → import round-trips; tampered or malformed imports are rejected`; `backup round trip verifies the checksum; any modification is rejected`; browser smoke `storage: *` checks |
 
@@ -132,7 +132,7 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 | INPUT | Browser without the File System Access API (Firefox, Safari), or permission revoked |
 | PROCESSING | `dailyBackup` |
 | OUTPUT | `UNSUPPORTED`, shown as "Daily backup: UNVERIFIED in this browser … Use Export". `PERMISSION_NEEDED` asks for one click. |
-| FAILURE | No silent skip: the state is always visible in the Ledger tab. |
+| FAILURE | No silent skip: the state is always visible on the Portfolio page, and the Overview checklist keeps "Turn on daily ledger backup" open until a backup folder is chosen. |
 | RECOVERY | Use the checksummed Export, or a Chromium browser. |
 | TEST | `without the File System Access API, daily backup reports UNSUPPORTED (manual export fallback)`; browser smoke `backup: UNVERIFIED label without File System Access` |
 
@@ -142,7 +142,7 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 |---|---|
 | INPUT | Machine offline; daemon stopped; Worker unreachable |
 | PROCESSING | `DaemonClient.detect` (short timeout); `WorkerClient.getJson` |
-| OUTPUT | Daemon: "Daemon: not connected (research features off)". The Research tab explains, and the kill switch is disabled with the text "no daemon: nothing to stop". Worker: every quote is `UNAVAILABLE` ("Worker unreachable"). The ledger keeps working offline. |
+| OUTPUT | Daemon: the header status reads "App not running" (or "Ledger + hosted prices" with a Worker URL). Overview's first step is "Start the app"; Opportunities explains; the kill switch is disabled and its tooltip says nothing can be staged or automated. Worker: every quote is `UNAVAILABLE` ("Worker unreachable"). The ledger keeps working offline. |
 | FAILURE | Nothing is computed from cached prices past their max age. Daemon jobs record `NETWORK_ERROR` and groups go `STALE`. |
 | RECOVERY | Automatic. The daemon resumes on its next job, and the UI re-detects the daemon on reload. |
 | TEST | `pipeline: network down, timeout, missing key and 401 each store no observation and record why`; browser smoke (CDN blocked: `dashboard: Chart.js absent (CDN blocked)`, `dashboard: chart area never blank without Chart.js`) |
@@ -179,6 +179,17 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 | FAILURE | Offline or no access → "Couldn't reach the repository", nothing changed. A running daemon, local edits or diverged history → refused, nothing changed (never a merge, rebase, reset or force). Tests failing after the update → the exact rollback (`git reset --keep <previous>`) and the database backup path are printed. |
 | RECOVERY | Stop the daemon, stash or commit edits, and retry. To roll back, run the printed command and copy the backed-up `orcastrike.sqlite` back while the daemon is stopped. |
 | TEST | `update: fast-forwards, backs up the database first, then reports up to date`; `update refuses: local edits, diverged history, or a running daemon; nothing is changed`; `update --convert: a ZIP-style folder becomes a git checkout; data kept, differing files copied aside` |
+
+## Automatic data-source verification fails
+
+| | |
+|---|---|
+| INPUT | The daemon's startup/daily check (report missing or older than 24 h), or Overview → "Verify now" |
+| PROCESSING | `daemon/auto-verify.js` runs `scripts/contract_test.mjs` with `ORCASTRIKE_CONTRACT_OUT=<data dir>/contract`; one run at a time, 3-minute timeout; the daemon then reloads the newest report (repo or local) |
+| OUTPUT | Per-source status on Overview (Steam, Skinport, CSFloat: verified / not verified yet / format changed / unreachable), the outcome code (`ALL_PASS`, `FORMAT_CHANGED`, `SOME_UNREACHABLE`, `ERROR`) in `/api/v2/health` → `verify`, and a "Verify now" button while anything is unverified |
+| FAILURE | A source that fails or can't be reached stays UNVERIFIED, so none of its data can make an opportunity ELIGIBLE (D-38). A timeout or crash is `ERROR`; the previous report stays in force. Nothing is written to tracked repo files. Disabled with a SYNTHETIC upstream or `ORCASTRIKE_AUTO_VERIFY=0`, and the UI says so. |
+| RECOVERY | Automatic retry on the next hourly check once the report is 24 h old, or "Verify now". A `FORMAT_CHANGED` outcome needs a parser update: the local `CONTRACT_REPORT.json` holds the field-level diff. |
+| TEST | `verifier runs the contract script into the data directory, reports the outcome, then reloads`; `verifier is disabled with a SYNTHETIC upstream or ORCASTRIKE_AUTO_VERIFY=0, and then runs nothing`; `the newest report wins; local fixtures resolve next to their report`; `a PASS whose fixture file is missing does not verify`; `a live format change is reported per source as FORMAT_CHANGED and never verifies` |
 
 ## Launcher can't start the app
 

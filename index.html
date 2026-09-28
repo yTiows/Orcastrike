@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Skin Arbitrage Terminal</title>
+  <title>Orcastrike</title>
   <link rel="stylesheet" href="styles.css">
   <!-- Chart.js: pinned, SRI-checked, async. If it fails to load, charts fall back to tables;
        nothing else depends on it. -->
@@ -15,37 +15,37 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand">
-      <h1>Orcastrike <span class="muted">Skin research terminal</span></h1>
-      <p class="tagline">Observes, tests hypotheses and records. It never buys, sells or lists anything: execution is OFF, and no mode or theme turns it on.</p>
-    </div>
-    <div class="header-row">
-      <div id="status-bar" class="status-bar" role="status" aria-live="polite"></div>
-      <button type="button" id="kill-switch" class="kill" title="Stops staging and any automation immediately. Always available.">Kill switch</button>
+    <div class="top-inner">
+      <a class="brand" href="#overview" aria-label="Orcastrike overview">
+        <span class="brand-mark" aria-hidden="true">O</span>
+        <span class="brand-name">Orcastrike</span>
+      </a>
+      <nav class="tabs" aria-label="Sections">
+        <a href="#overview" data-tab="overview">Overview</a>
+        <a href="#opportunities" data-tab="opportunities">Opportunities</a>
+        <a href="#portfolio" data-tab="portfolio">Portfolio</a>
+        <a href="#markets" data-tab="markets">Markets</a>
+        <a href="#settings" data-tab="settings">Settings</a>
+      </nav>
+      <div class="top-right">
+        <a id="status-pill" class="status-pill" href="#overview" role="status" aria-live="polite"><span class="dot"></span><span>Starting…</span></a>
+        <button type="button" id="kill-switch" class="kill" title="Stops staging and any automation immediately. Always available.">Kill switch</button>
+      </div>
     </div>
     <div id="umbra-banner" class="umbra-banner" role="status" hidden></div>
-    <nav class="tabs" aria-label="Sections">
-      <a href="#dashboard" data-tab="dashboard">Dashboard</a>
-      <a href="#research" data-tab="research">Research</a>
-      <a href="#scanner" data-tab="scanner">Scanner</a>
-      <a href="#ledger" data-tab="ledger">Ledger</a>
-      <a href="#events" data-tab="events">Events</a>
-      <a href="#settings" data-tab="settings">Settings</a>
-    </nav>
+    <div id="notice-bar" class="notice-bar"></div>
   </header>
   <main>
-    <section data-view="dashboard"></section>
-    <section data-view="research" hidden></section>
-    <section data-view="scanner" hidden></section>
-    <section data-view="ledger" hidden></section>
-    <section data-view="events" hidden></section>
+    <section data-view="overview"></section>
+    <section data-view="opportunities" hidden></section>
+    <section data-view="portfolio" hidden></section>
+    <section data-view="markets" hidden></section>
     <section data-view="settings" hidden></section>
     <noscript><p class="error-box">This app needs JavaScript.</p></noscript>
   </main>
-  <footer class="muted">
-    All amounts are integer USD cents, shown as dollars. Timestamps are UTC. Prices come from public market data via
-    the proxy Worker; missing or unverifiable data is shown as INSUFFICIENT_DATA / UNAVAILABLE, never estimated.
-    Not financial advice.
+  <footer>
+    Research and record-keeping only: Orcastrike never buys, sells or lists anything, and no mode or theme turns execution on.
+    Amounts are integer USD cents shown as dollars; times are UTC. Missing or unverifiable data is shown as such, never estimated. Not financial advice.
   </footer>
 </body>
 </html>

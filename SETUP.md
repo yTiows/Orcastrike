@@ -26,7 +26,7 @@ cd Orcastrike
 .\Orcastrike.cmd                                 # or double-click Orcastrike.cmd in Explorer
 ```
 
-Your browser opens <http://127.0.0.1:8790/>. That's it. The steps below explain each part, the optional extras (CSFloat key, live verification), updating and troubleshooting.
+Your browser opens <http://127.0.0.1:8790/>. That's it: the app checks the live data sources and starts collecting prices by itself, and the **Overview** page lists the few things only you can do (record your starting cash, pick a backup folder, optionally add a CSFloat key). The steps below explain each part, updating and troubleshooting.
 
 **Already downloaded the ZIP?** It runs as is: double-click `Orcastrike.cmd` in the extracted folder. To make updates work, run `.\Orcastrike.cmd update --convert` once ([step 7](#7-update)).
 
@@ -93,6 +93,8 @@ Without a key, CSFloat reports `NOT_CONFIGURED`; Steam and Skinport still work. 
 
 Create a key in your CSFloat account's developer/API settings. Then:
 
+The Overview page shows these same commands with a **Copy** button while no key is set.
+
 **Windows (PowerShell).** This stores the key in your *user* environment, outside the project. It's typed hidden:
 
 ```powershell
@@ -115,23 +117,25 @@ read -rs CSFLOAT_API_KEY && export CSFLOAT_API_KEY
 
 Persisting the key in a shell profile stores it in plain text. That's your call.
 
-## 5. Verify the live data sources (once per machine, needs internet)
+## 5. Live data-source verification (automatic)
 
-Until a parser has passed against a **live** response, the system treats its data as unverified, and **no opportunity can become ELIGIBLE**. This is deliberate (DECISIONS.md D-38). To verify, run from the project folder:
+Until a parser has passed against a **live** response, the system treats its data as unverified, and **no opportunity can become ELIGIBLE**. This is deliberate (DECISIONS.md D-38). You don't need to do anything for it:
+
+- A few seconds after the app starts, it runs the live contract check if there is no report yet or the last one is more than 24 hours old, and re-checks every hour after that. Overview shows the result per source (Steam, Skinport, CSFloat) and has a **Verify now** button.
+- Each check calls every source once, well within rate limits.
+- Results go to the app's data folder (`.orcastrike-data\contract\`): `CONTRACT_REPORT.json` with PASS, FAIL or BLOCKED per endpoint, and **sanitized** responses (seller identities and credential-like fields removed). Tracked repo files are never touched. The newest report, local or in the repo, is the one used.
+- A source that fails stays unverified. "format changed" on Overview means an upstream changed its response and the parser needs an update (the report holds the field-level diff); "unreachable" means this network blocked it.
+- Turn it off with the environment variable `ORCASTRIKE_AUTO_VERIFY=0`. It is always off in SYNTHETIC test mode.
+
+To run it by hand instead, for example to commit shared fixtures to the repo:
 
 ```powershell
 node scripts/contract_test.mjs      # picks up CSFLOAT_API_KEY from the environment if set
 ```
 
-- It calls each source once, well within rate limits.
-- It stores **sanitized** responses under `tests\fixtures\live\` (seller identities and credential-like fields removed).
-- It writes `tests\fixtures\live\CONTRACT_REPORT.json`, with PASS, FAIL or BLOCKED per endpoint.
-- Exit code: `0` all PASS, `1` a FAIL (an upstream format changed; the report shows the field-level diff), `2` something BLOCKED or UNVERIFIED (unreachable, or no key for CSFloat).
-- Restart the app afterwards. `doctor` and the start banner show the new state.
+It writes to `tests\fixtures\live\`. Exit code: `0` all PASS, `1` a FAIL (format changed), `2` something BLOCKED or UNVERIFIED (unreachable, or no key for CSFloat). Look through the fixtures before committing them: they are sanitized, but they are real responses.
 
 Optionally, `node scripts/netcheck.mjs` measures reachability and latency per source from this machine. It writes a report to `reports\netcheck\`.
-
-If you commit the new fixtures to share them, look through them first. They are sanitized, but they are real responses.
 
 ## 6. Run it
 
@@ -141,7 +145,7 @@ A console window shows the app's log, and your browser opens <http://127.0.0.1:8
 
 ```
 ✔ Orcastrike is running: http://127.0.0.1:8790/
-  CSFloat: NOT_CONFIGURED · live data contract: not verified yet (…)
+  CSFloat: no key (optional) · data sources: being verified automatically (see the Overview page)
   Stop: Ctrl+C in this window, or `npm run stop` from another one.
 ```
 
@@ -152,19 +156,20 @@ A console window shows the app's log, and your browser opens <http://127.0.0.1:8
 - **Update notice:** on start, a git checkout checks in the background whether a newer version exists and prints a one-line notice. It never updates by itself.
 - **Security:** the app listens on 127.0.0.1 only, never on your network. If Windows asks whether Node.js may use the network, you can decline.
 
-**First time in the UI:**
+**First time in the UI.** Five pages, and the header shows the app's state (Live, Test data, Read-only, App not running) and the kill switch on every page.
 
-1. Open the page once. The browser sends your watchlist (by default the starter list; edit it in the **Scanner** tab) to the app, which then keeps sampling it even with the browser closed.
-2. **Research** shows the evidence ladder, every evaluated pair with its blocked reason and full calculation trace, paper vs real trades, data quality and coverage. Expect **no opportunities at first**. Rankings need at least 7 days of the app's own observations, and evidence gates need 14 days and 30 closed paper trades (EVIDENCE.md).
-3. **Ledger:** after you trade elsewhere, record your cash, buys and sells here. The app never trades. In Chromium, choose a daily backup folder (Ledger → Backup), or use **Export** regularly.
-4. **Settings:** risk limits, and the app's research settings (CONFIGURATION.md lists every value).
+1. **Overview**: what the app is doing right now, a short **Next steps** checklist that ticks itself off, the best current opportunities, your balances, the five profit figures (never added together), and evidence progress. Start here; most items need nothing from you.
+2. **Opportunities**: every pair the engine checks, with its status in plain words next to the exact code, the reason it's blocked, sources with timestamps and age, and a full calculation trace (click a row). Expect **none at first**: rankings need at least 7 days of the app's own observations, and evidence gates need 14 days and 30 closed paper trades (EVIDENCE.md). Track record, data health, ranking mode (UMBRA) and fee calibration are collapsible sections below the table.
+3. **Portfolio**: after you trade elsewhere, click **Record a buy** / **Record a sale** / **Add or withdraw cash**. Only that form opens; the time defaults to now, and the current market ask is offered as a one-click fill. The app never trades. In Chromium, choose a daily backup folder once (Overview offers it too), or use **Export** regularly.
+4. **Markets**: current price gaps for your watchlist (prices refresh by themselves every minute), the watchlist editor, Steam price history (loads by itself) and event windows (click an event to see the price change around it).
+5. **Settings**: risk limits in percent, the operating mode and automation level, and advanced app settings (CONFIGURATION.md lists every value).
 
 **Where your data lives:**
 
 | Data | Location | How to back it up |
 |---|---|---|
 | Market observations, paper trades, evidence | `.orcastrike-data\orcastrike.sqlite` in the project folder | `update` backs it up automatically. Otherwise copy the folder while the app is stopped. |
-| Your ledger (real trades, cash) | Your browser's storage (IndexedDB), per browser and profile | Ledger → daily backup folder, or **Export** (checksummed JSON) |
+| Your ledger (real trades, cash) | Your browser's storage (IndexedDB), per browser and profile | Portfolio → Backup: daily backup folder, or **Export** (checksummed JSON) |
 
 ## 7. Update
 
@@ -238,11 +243,12 @@ Start with **`.\Orcastrike.cmd doctor`** (or `npm run doctor`). It checks, and p
 | "Node … is too old" | Install the current LTS: `winget install OpenJS.NodeJS.LTS`. |
 | "Port 8790 is used by another program" | `.\Orcastrike.cmd start --port 8791`, then use the printed URL. |
 | The browser didn't open | Open <http://127.0.0.1:8790/> yourself. |
-| Everything is INSUFFICIENT, no opportunities | Expected until the live contract passes (step 5) and the app has collected days of data. Each row's blocked reason says exactly why. |
+| Everything is INSUFFICIENT, no opportunities | Expected until the data sources are verified (automatic, step 5) and the app has collected days of data. Overview says which; each row's blocked reason says exactly why. |
+| Overview shows a source as "unreachable" or "format changed" | Unreachable: this network blocks it; try another network, then **Verify now**. Format changed: the upstream changed its response; update the app (step 7). |
 | CSFloat says NOT_CONFIGURED after setting the key | Open a new window (environment variables apply to new processes), then `doctor`. |
 | `npm.ps1 cannot be loaded … running scripts is disabled` | PowerShell's execution policy blocks npm's `.ps1` shim. Use `npm.cmd …` or `.\Orcastrike.cmd …`. |
 | The daemon exits with code 2, "database … unreadable" | Its message has the recovery steps; FAILURE_STATES.md has details ("Corrupt database"). Your ledger is separate and unaffected. |
-| Status bar says **DEGRADED** | The database failed its integrity check. The app is read-only; see FAILURE_STATES.md. |
+| Header says **Read-only: database problem** | The database failed its integrity check (DEGRADED). The app is read-only; see FAILURE_STATES.md. |
 | `update` says "not a git checkout" | Run `update --convert` once (step 7). |
 | Tests fail on an old Windows clone with CRLF files | Update (or re-clone). This version pins LF line endings. |
 

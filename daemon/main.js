@@ -24,7 +24,8 @@ import { UpstreamClient } from "./http-client.js";
 import { makeLogger } from "./redact.js";
 import { Scheduler } from "./scheduler.js";
 import { createDaemonServer, HttpError } from "./server.js";
-import { loadVerification, syncParserVersions } from "./verification.js";
+import { Verifier } from "./auto-verify.js";
+import { loadLatestVerification, sourceStatus, syncParserVersions } from "./verification.js";
 
 const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), ".."));
 export const DAEMON_VERSION = "orcastrike-daemon@1";
@@ -59,7 +60,8 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
   }
   const integrity = integrityCheck(db);
   const startedAt = new Date().toISOString();
-  let verification = loadVerification(env.ORCASTRIKE_CONTRACT_REPORT || undefined);
+  const loadVerif = () => loadLatestVerification({ dataDir, override: env.ORCASTRIKE_CONTRACT_REPORT || undefined });
+  let verification = loadVerif();
   let settingsState = effectiveConfig(db);
 
   const ctx = {
@@ -71,6 +73,11 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     settingsErrors: () => settingsState.errors,
     reloadSettings: () => (settingsState = effectiveConfig(db)),
     verification: () => verification,
+    sourceStatus: () => sourceStatus(verification),
+    reloadVerification: () => {
+      verification = loadVerif();
+      if (integrity.ok) syncParserVersions(db, verification, new Date().toISOString());
+    },
     parserStatus: () => parserStatuses(db),
     dbHealth: () => ({ path_in_data_dir: "orcastrike.sqlite", schema_version: migrate(db), integrity: integrity.ok ? "ok" : "CORRUPT", degraded: !integrity.ok }),
     log,
@@ -83,6 +90,9 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
   } else {
     syncParserVersions(db, verification, startedAt);
   }
+
+  const verifier = new Verifier({ root: ROOT, dataDir, env, log, onDone: () => ctx.reloadVerification() });
+  ctx.verifier = verifier;
 
   const client = new UpstreamClient({ rateLimits: settingsState.cfg.ratelimit, env });
   const scheduler = new Scheduler({ db, client, getCfg: ctx.getCfg, getSettings: () => getSettings(db), env, log, onAfterJob: (job, r) => ctx.onAfterJob?.(job, r) });
@@ -144,12 +154,14 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     };
     runEngine();
     timers.push(setInterval(runEngine, Number(env.ORCASTRIKE_ENGINE_INTERVAL_MS) || 30000));
-    timers.push(
-      setInterval(() => {
-        verification = loadVerification(env.ORCASTRIKE_CONTRACT_REPORT || undefined);
-        syncParserVersions(db, verification, new Date().toISOString());
-      }, 10 * 60 * 1000),
-    );
+    timers.push(setInterval(() => ctx.reloadVerification(), 10 * 60 * 1000));
+    // Live verification runs by itself: now if the newest report is missing or older than a day,
+    // then whenever it gets that old again (checked hourly).
+    const verifyIfDue = (trigger) => {
+      if (!verifier.disabledReason() && verifier.due(verification.report_run_at)) verifier.run(trigger);
+    };
+    timers.push(setTimeout(() => verifyIfDue("startup"), 3000));
+    timers.push(setInterval(() => verifyIfDue("daily"), 3600 * 1000));
   } else if (!integrity.ok) {
     try {
       recordQualityEvent(db, { occurred_at: startedAt, severity: "HIGH", code: "DB_INTEGRITY", detail: integrity.detail });

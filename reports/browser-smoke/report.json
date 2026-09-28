@@ -1,19 +1,19 @@
 {
-  "run_at": "2026-09-28T04:07:59.383Z",
+  "run_at": "2026-09-28T07:17:42.252Z",
   "upstream": "SYNTHETIC (loopback)",
   "browser": "chromium (headless)",
-  "passed": 44,
+  "passed": 46,
   "failed": 0,
   "results": [
     {
       "name": "storage: IndexedDB is primary",
       "ok": true,
-      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T04:07:45.267Z; the original was kept"
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T07:17:29.297Z; the original was kept"
     },
     {
       "name": "storage: v1 localStorage ledger migrated, original kept",
       "ok": true,
-      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T04:07:45.267Z; the original was kept"
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T07:17:29.297Z; the original was kept"
     },
     {
       "name": "storage: localStorage source untouched",
@@ -28,22 +28,27 @@
     {
       "name": "backup: Chromium exposes File System Access → configurable",
       "ok": true,
-      "detail": "Daily backup: NO_DIRECTORY — choose a backup folder"
+      "detail": "Daily backup: NO_DIRECTORY: choose a backup folder"
+    },
+    {
+      "name": "portfolio: Now fills the time field",
+      "ok": true,
+      "detail": "2026-09-28T07:17"
     },
     {
       "name": "ledger: buy recorded",
       "ok": true,
-      "detail": "Recorded under strat-d83d768d. Transfer-eligible from 2026-09-08 10:00 UTC."
+      "detail": "Recorded. Tradable from 2026-09-08 10:00 UTC (Trade Protection)."
     },
     {
       "name": "ledger: partial sell recorded (FIFO split)",
       "ok": true,
-      "detail": "Recorded. Net $46.00 → USD cash; realized $6.00; banked $1.80. | \n            AK-47 | Redline (Field-Tested)1 / 3csfloat\n            $20.00$20.002026-09-01 10:00 UTC\n            eligible\n            INSUFFICIENT_DATA\n            —\n            INSUFFICIENT_DATA\n            INSUFFICIENT\n            UNKNOWN\n            strat-d83d768d"
+      "detail": "Recorded. $46.00 net to cash; profit $6.00; banked $1.80. | \n            AK-47 | Redline (Field-Tested)CSFloat · $20.00 each\n            1 / 3\n            $20.00\n            INSUFFICIENT_DATA\n            —\n            now\n            no price\n            UNKNOWN"
     },
     {
       "name": "ledger: Steam sale shows the C4 comparison (15%-of-gross used vs Valve exact)",
       "ok": true,
-      "detail": "2026-09-21 10:00 UTCAK-47 | Redline (Field-Tested)\n          1 (1)steam\n          $20.00$3.00$0.00\n          $17.00 → Steam WalletPer unit: 15%-of-gross $17.00 (used) vs Valve exact $17.39.\n          —\n          $20.00-$3.00\n          -15.00%480h$0.00\n          $564.20 (lower bound)\n          strat-d83d768d · fees-v1@2026-09-27"
+      "detail": "2026-09-21 10:00 UTCAK-47 | Redline (Field-Tested)\n          1steam\n          $20.00$3.00\n          $17.00to Steam Wallet\n          -$3.00\n          -15.00%\n          held 480h · banked $0.00 · fees-v1@2026-09-27Per unit: 15%-of-gross $17.00 (used) vs Valve exact $17.39."
     },
     {
       "name": "storage: ledger survives reload from IndexedDB",
@@ -53,12 +58,17 @@
     {
       "name": "dashboard: five separate profit figures",
       "ok": true,
-      "detail": "REALIZED_NET_PROFIT REAL\n        $3.00COMPLETE · 2 closed REAL trade(s)PAPER_NET_PROFIT PAPER\n        $0.00COMPLETE · 0 CLOSED paper trade(s); 0 VOID excludedHISTORICAL_SIMULATED_PROFIT SIMULATED\n        UNAVAILABLEUNAVAILABLE · no Steam-only history simulation loaded this sessionMARK_TO_MARKET_UNRE"
+      "detail": "\n          Realized profit REALREALIZED_NET_PROFIT\n          $3.00COMPLETE · 2 closed REAL trade(s)\n          Paper-trading profit PAPERPAPER_NET_PROFIT\n          $0.00COMPLETE · 0 CLOSED paper trade(s); 0 VOID excluded\n          Historical simulation SIMULATEDHISTORICAL_SIMULATED_PROFIT\n          U"
     },
     {
       "name": "dashboard: chart area never blank without Chart.js",
       "ok": true,
-      "detail": "No history loaded."
+      "detail": "Chart unavailable (Chart.js did not load). Last 1 days:\n      Date (UTC)PriceUnits sold2026-09-01$20.5012"
+    },
+    {
+      "name": "markets: price history loads without a button press",
+      "ok": true,
+      "detail": "Chart unavailable (Chart.js did not load). Last 1 days:\n      Date (UTC)PriceUnits sold2026-09-01$20.5012"
     },
     {
       "name": "dashboard: Chart.js absent (CDN blocked)",
@@ -68,12 +78,12 @@
     {
       "name": "research: evaluated pairs rendered",
       "ok": true,
-      "detail": "4"
+      "detail": "8"
     },
     {
       "name": "research: SYNTHETIC/UNVERIFIED data never ELIGIBLE",
       "ok": true,
-      "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
+      "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
     },
     {
       "name": "research: every blocked row states its reason",
@@ -93,7 +103,7 @@
     {
       "name": "research: PARSER_UNVERIFIED surfaced",
       "ok": true,
-      "detail": "entry_quote: PARSER_UNVERIFIED steam_histogram@1 (no LIVE fixture has passed this parser)"
+      "detail": "\n    —\n    ▸ Kilowatt Case SYNTHETIC\n    Steam → CSFloat\n    Not enough verified data INSUFFICIENTentry_quote: no quote observation from steam\n    —\n    —\n    INSUFFICIENTCSFloat 07:17 UTC · 0s\n  "
     },
     {
       "name": "research: row expands into a step-by-step trace",
@@ -128,7 +138,7 @@
     {
       "name": "UMBRA: palette base #06060A applied",
       "ok": true,
-      "detail": "rgb(246, 247, 249)"
+      "detail": "rgb(244, 245, 248)"
     },
     {
       "name": "UMBRA: rows evaluated, and the mode grants no eligibility",
@@ -136,27 +146,22 @@
       "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
     },
     {
-      "name": "layout: no horizontal overflow at 1280px (dashboard)",
+      "name": "layout: no horizontal overflow at 1280px (overview)",
       "ok": true,
       "detail": "0px"
     },
     {
-      "name": "layout: no horizontal overflow at 1280px (research)",
+      "name": "layout: no horizontal overflow at 1280px (opportunities)",
       "ok": true,
       "detail": "0px"
     },
     {
-      "name": "layout: no horizontal overflow at 1280px (scanner)",
+      "name": "layout: no horizontal overflow at 1280px (portfolio)",
       "ok": true,
       "detail": "0px"
     },
     {
-      "name": "layout: no horizontal overflow at 1280px (ledger)",
-      "ok": true,
-      "detail": "0px"
-    },
-    {
-      "name": "layout: no horizontal overflow at 1280px (events)",
+      "name": "layout: no horizontal overflow at 1280px (markets)",
       "ok": true,
       "detail": "0px"
     },
@@ -171,6 +176,11 @@
       "detail": ""
     },
     {
+      "name": "navigation: legacy #research link opens Opportunities",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "reduced motion: drift disabled",
       "ok": true,
       "detail": ""
@@ -181,27 +191,27 @@
       "detail": ""
     },
     {
-      "name": "layout: no horizontal overflow at 390px (dashboard)",
+      "name": "overview: the Add cash step opens the cash form on Portfolio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: no horizontal overflow at 390px (overview)",
       "ok": true,
       "detail": "0px"
     },
     {
-      "name": "layout: no horizontal overflow at 390px (research)",
+      "name": "layout: no horizontal overflow at 390px (opportunities)",
       "ok": true,
       "detail": "0px"
     },
     {
-      "name": "layout: no horizontal overflow at 390px (scanner)",
+      "name": "layout: no horizontal overflow at 390px (portfolio)",
       "ok": true,
       "detail": "0px"
     },
     {
-      "name": "layout: no horizontal overflow at 390px (ledger)",
-      "ok": true,
-      "detail": "0px"
-    },
-    {
-      "name": "layout: no horizontal overflow at 390px (events)",
+      "name": "layout: no horizontal overflow at 390px (markets)",
       "ok": true,
       "detail": "0px"
     },
@@ -213,7 +223,7 @@
     {
       "name": "backup: UNVERIFIED label without File System Access",
       "ok": true,
-      "detail": "Daily backup: UNVERIFIED in this browser (File System Access API unavailable outside Chromium). Use Export."
+      "detail": "Daily backup: UNVERIFIED in this browser (the File System Access API exists only in Chromium browsers). Use Export."
     },
     {
       "name": "UMBRA: deactivation restores the standard theme",

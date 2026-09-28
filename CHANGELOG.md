@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2.2.0 — 2026-09-28 (less manual work, clearer UI)
+
+### Changed
+- **UI redesigned around five pages** (DECISIONS D-55): **Overview** (what the app is doing, a self-ticking Next steps checklist, top opportunities, balances, the five profit figures, evidence progress), **Opportunities**, **Portfolio**, **Markets** (price gaps, watchlist, Steam price history, events) and **Settings**. Old links (`#dashboard`, `#research`, `#ledger`, `#scanner`, `#events`) redirect.
+  - Status appears in plain words beside the exact code (D-56); secondary material is in collapsible sections; Portfolio opens one form at a time.
+  - Header: brand, pages, a status pill (Live / Test data / Read-only / App not running) and the kill switch; notices (kill switch, loss limit, storage, settings) sit under it.
+  - New visual system: spacing and radius tokens, cards, chips, checklists and meters. The UMBRA palette is unchanged, and reduced motion is still honoured. Works at 390 px without horizontal scrolling.
+  - Settings: risk limits in percent; operating mode and automation level as described choices; advanced daemon settings grouped and collapsed.
+
+### Added
+- **Automatic live verification** (D-57): the daemon runs the contract test at startup when the report is missing or over 24 h old, re-checks hourly, and offers **Verify now** (POST `/api/v2/verify`). Results go to `<data dir>/contract/`, never to tracked files. `ORCASTRIKE_AUTO_VERIFY=0` turns it off; it is always off with a SYNTHETIC upstream. A live format change shows per source as `FORMAT_CHANGED`.
+- `/api/v2/health` gains `parser_status_by_source`, `verify` (state and outcome), `data` (observations, tracked items, per-source request health) and `key_setup`.
+- Automation of one-right-answer steps (D-58): quotes refresh every 60 s (daemon) or 300 s (Worker); price history loads for the selected item; the event price change computes on selection; form times default to now; the current ask is a one-click fill.
+- CSFloat key setup commands on Overview, served by the daemon, with a Copy button (D-59).
+
+### Fixed
+- An opportunity metric was labelled "Expected net profit" (P0-8 wording); it now reads "Estimated net profit". Found by the no-git secret scan, which also checks untracked files.
+
 ## 2.1.0 — 2026-09-28 (setup automation and Windows support)
 
 ### Added

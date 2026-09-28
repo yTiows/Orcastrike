@@ -18,6 +18,8 @@ const ENV = [
   ["ORCASTRIKE_DATA_DIR", "developer_default", "daemon env", "`.orcastrike-data/` (git-ignored)", "SQLite database and logs."],
   ["ORCASTRIKE_ENGINE_INTERVAL_MS", "developer_default", "daemon env", "30000", "Opportunity engine cycle."],
   ["ORCASTRIKE_CONTRACT_REPORT", "developer_default", "daemon env", "`tests/fixtures/live/CONTRACT_REPORT.json`", "Parser verification source (D-38)."],
+  ["ORCASTRIKE_AUTO_VERIFY", "developer_default", "daemon env", "on", "`0` turns off the automatic live check of the data sources (startup when the report is missing or over 24 h old, then hourly re-check). Also off with a SYNTHETIC upstream."],
+  ["ORCASTRIKE_CONTRACT_OUT", "developer_default", "contract-test env", "unset (repo `tests/fixtures/live/`)", "Output directory for `scripts/contract_test.mjs`. The daemon sets it to `<data dir>/contract/`, so automatic runs never write tracked files."],
   ["ORCASTRIKE_SYNTHETIC", "test only", "daemon env", "unset", "`1` flags every stored row SYNTHETIC; required for the upstream override."],
   ["ORCASTRIKE_UPSTREAM_OVERRIDE", "test only", "daemon env", "unset", "Loopback host only, and only with ORCASTRIKE_SYNTHETIC=1; anything else refuses to start."],
   ["ORCASTRIKE_ROOT", "test only", "launcher env", "unset", "Points scripts/orca.mjs at a scratch checkout (tests/orca.test.js)."],

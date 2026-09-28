@@ -4,7 +4,7 @@ A CS2 skin research terminal. It observes Steam, Skinport and CSFloat, tests cro
 
 It **never buys, sells or lists anything**. You record your own trades in its ledger.
 
-**Status:** runs locally, and is covered by an automated test suite (`npm test`, run on Linux and Windows in CI) plus a browser smoke test. Live data sources are **not yet verified** (SETUP.md step 5), no strategy is validated, and nothing is deployed. REQUIREMENTS.md has the status of every requirement.
+**Status:** runs locally, and is covered by an automated test suite (`npm test`, run on Linux and Windows in CI) plus a browser smoke test. The app verifies the live data sources by itself on your machine (SETUP.md step 5). The repository ships no live-verified parser (the build environment's network blocked every source), no strategy is validated, and nothing is deployed. REQUIREMENTS.md has the status of every requirement.
 
 ## Quick start
 
@@ -26,7 +26,7 @@ git clone -b claude/skin-arb-terminal-spec-rtocat https://github.com/yTiows/Orca
 cd Orcastrike && ./orcastrike.sh                            # or: npm start
 ```
 
-Your browser opens <http://127.0.0.1:8790/>. No `npm install` is needed to run it.
+Your browser opens <http://127.0.0.1:8790/>. No `npm install` is needed to run it. The app verifies the live data sources and collects prices by itself; the **Overview** page lists the few steps that need you.
 
 | Task | Windows | Any OS |
 |---|---|---|
@@ -34,9 +34,9 @@ Your browser opens <http://127.0.0.1:8790/>. No `npm install` is needed to run i
 | Check everything and run the tests | `Orcastrike.cmd setup` | `npm run setup` |
 | Update (fast-forward, database backed up first) | `Orcastrike.cmd update` | `npm run update` |
 | Diagnose | `Orcastrike.cmd doctor` | `npm run doctor` |
-| Verify the live data sources (once, needs internet) | `node scripts/contract_test.mjs` | same |
+| Re-check the live data sources now | Overview → **Verify now** (runs daily by itself) | same |
 
-**[SETUP.md](SETUP.md)** is the full guide: prerequisites, the optional CSFloat key, live verification, daily use, updates, and troubleshooting.
+**[SETUP.md](SETUP.md)** is the full guide: prerequisites, the optional CSFloat key, what each page does, updates, and troubleshooting.
 
 ## Documentation
 

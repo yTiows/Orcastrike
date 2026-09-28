@@ -12,6 +12,16 @@ import { SCHEMA, validateResearchSettings } from "../config/settings-schema.js";
 export const API_VERSION = "orcastrike-daemon-api@1";
 const QUOTE_TTL_S = 90;
 const PARSER_FOR_SOURCE = { steam: "steam_histogram@1", csfloat: "csfloat_listings@1", skinport: "skinport_items@1" };
+// Setup text for the Overview checklist. It lives server-side so shipped client files never
+// carry a credential name (secret scan rule 4); it holds names only, never a value.
+const KEY_SETUP = {
+  windows_powershell: [
+    '$s = Read-Host "CSFloat API key" -AsSecureString',
+    "$k = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))",
+    '[Environment]::SetEnvironmentVariable("CSFLOAT_API_KEY", $k, "User"); Remove-Variable s, k',
+  ].join("\n"),
+  macos_linux: "./orcastrike.sh stop\nread -rs CSFLOAT_API_KEY && export CSFLOAT_API_KEY && ./orcastrike.sh",
+};
 
 function item(query) {
   const raw = query.get("item");
@@ -61,9 +71,68 @@ export function v1Quote(ctx, source, name) {
   return out;
 }
 
+// Cheap activity summary for the UI's status and "collecting data" progress. Reads recent rows
+// by primary key only, so it stays fast on large databases.
+export function dataSummary(db) {
+  try {
+    const first = db.prepare("SELECT observed_at FROM market_observations ORDER BY observation_id ASC LIMIT 1").get();
+    const last = db.prepare("SELECT observed_at FROM market_observations ORDER BY observation_id DESC LIMIT 1").get();
+    const total = db.prepare("SELECT MAX(observation_id) AS n FROM market_observations").get()?.n ?? 0;
+    const tracked = trackedItems(db, getSettings(db)).size;
+    const recent = db
+      .prepare(
+        `SELECT source, outcome, MAX(requested_at) AS last_at, COUNT(*) AS n FROM source_requests
+         WHERE request_id > (SELECT COALESCE(MAX(request_id), 0) - 2000 FROM source_requests) GROUP BY source, outcome`,
+      )
+      .all();
+    const sources = {};
+    for (const r of recent) {
+      const s = (sources[r.source] ??= { ok: 0, failed: 0, last_ok_at: null, last_failure: null, last_failure_at: null });
+      if (r.outcome === "OK") {
+        s.ok += r.n;
+        s.last_ok_at = r.last_at;
+      } else {
+        s.failed += r.n;
+        if (!s.last_failure_at || r.last_at > s.last_failure_at) Object.assign(s, { last_failure: r.outcome, last_failure_at: r.last_at });
+      }
+    }
+    return { first_observation_at: first?.observed_at ?? null, last_observation_at: last?.observed_at ?? null, observations_total: total, tracked_items: tracked, sources };
+  } catch {
+    return null; // DEGRADED database: the UI shows the DEGRADED state instead
+  }
+}
+
+function verifyState(ctx) {
+  const v = ctx.verification();
+  return {
+    ...ctx.verifier.state,
+    disabled: ctx.verifier.disabledReason(),
+    report_run_at: v.report_run_at,
+    results: v.results,
+    by_source: ctx.sourceStatus(),
+  };
+}
+
 export function coreRoutes(ctx) {
   const { db } = ctx;
   return [
+    {
+      method: "GET",
+      path: "/api/v2/verify",
+      handler: () => ({ contract: "verify@1", ...verifyState(ctx) }),
+    },
+    {
+      // Runs the live contract test now (the daemon also runs it by itself once a day).
+      method: "POST",
+      path: "/api/v2/verify",
+      handler: ({ body }) => {
+        if (body?.confirm !== true) throw new HttpError(422, "explicit confirmation required");
+        const why = ctx.verifier.disabledReason();
+        if (why) throw new HttpError(409, `live verification is ${why}`);
+        ctx.verifier.run("manual");
+        return { contract: "verify@1", started: true, ...verifyState(ctx) };
+      },
+    },
     {
       method: "GET",
       path: "/api/v2/health",
@@ -77,6 +146,10 @@ export function coreRoutes(ctx) {
         parsers: ctx.parserStatus(),
         contract_report_run_at: ctx.verification().report_run_at,
         parser_for_source: PARSER_FOR_SOURCE,
+        parser_status_by_source: ctx.sourceStatus(),
+        verify: verifyState(ctx),
+        data: dataSummary(db),
+        key_setup: KEY_SETUP,
         settings_errors: ctx.settingsErrors(),
       }),
     },

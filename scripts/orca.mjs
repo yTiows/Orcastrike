@@ -180,14 +180,20 @@ function requireNode() {
   return false;
 }
 
+// The newer of the repository's report and the one the daemon writes when it verifies by itself.
 function contractSummary() {
-  try {
-    const r = JSON.parse(readFileSync(join(ROOT, "tests", "fixtures", "live", "CONTRACT_REPORT.json"), "utf8"));
-    const counts = r.results.reduce((m, x) => ((m[x.status] = (m[x.status] ?? 0) + 1), m), {});
-    return { run_at: r.run_at, counts, verified: (counts.PASS ?? 0) > 0 };
-  } catch {
-    return null;
-  }
+  const read = (p) => {
+    try {
+      return JSON.parse(readFileSync(p, "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const reports = [read(join(ROOT, "tests", "fixtures", "live", "CONTRACT_REPORT.json")), read(join(dataDir(), "contract", "CONTRACT_REPORT.json"))].filter((r) => r?.run_at && Array.isArray(r.results));
+  if (!reports.length) return null;
+  const r = reports.sort((a, b) => Date.parse(b.run_at) - Date.parse(a.run_at))[0];
+  const counts = r.results.reduce((m, x) => ((m[x.status] = (m[x.status] ?? 0) + 1), m), {});
+  return { run_at: r.run_at, counts, verified: (counts.PASS ?? 0) > 0 };
 }
 
 function runTests() {
@@ -266,7 +272,7 @@ export async function doctor({ json = false } = {}) {
   else add("FAIL", "Port", `${port} is used by another program: start with --port 8791`);
   add((process.env.CSFLOAT_API_KEY ?? "").trim() ? "OK" : "INFO", "CSFLOAT_API_KEY", (process.env.CSFLOAT_API_KEY ?? "").trim() ? "set (value not shown)" : "not set: CSFloat reports NOT_CONFIGURED (optional; SETUP.md step 4)");
   const c = contractSummary();
-  add(c?.verified ? "OK" : "WARN", "Live data contract", c ? `last run ${c.run_at}: ${Object.entries(c.counts).map(([k, v]) => `${v} ${k}`).join(", ")}${c.verified ? "" : ". No parser is VERIFIED yet, so no opportunity can be ELIGIBLE: run `node scripts/contract_test.mjs`"}` : "never run: `node scripts/contract_test.mjs`");
+  add(c?.verified ? "OK" : "WARN", "Live data contract", c ? `last run ${c.run_at}: ${Object.entries(c.counts).map(([k, v]) => `${v} ${k}`).join(", ")}${c.verified ? "" : ". No parser is VERIFIED yet, so no opportunity can be ELIGIBLE. The app re-checks by itself daily (or: Overview → Verify now)"}` : "not run yet: the app runs it by itself a few seconds after it starts");
   if (json) say(JSON.stringify(rows, null, 2));
   else {
     say("Orcastrike doctor\n");
@@ -348,7 +354,7 @@ export async function start(opts) {
   if (h) {
     const c = contractSummary();
     say(`\n✔ Orcastrike is running: ${url}`);
-    say(`  CSFloat: ${h.sources?.csfloat ?? "?"} · live data contract: ${c?.verified ? "VERIFIED parsers present" : "not verified yet (no opportunity can be ELIGIBLE; see SETUP.md step 5)"}`);
+    say(`  CSFloat: ${h.sources?.csfloat === "CONFIGURED" ? "key set" : "no key (optional)"} · data sources: ${c?.verified ? "verified" : "being verified automatically (see the Overview page)"}`);
     say("  Stop: Ctrl+C in this window, or `npm run stop` from another one.\n");
     if (opts.open) openBrowser(url);
     if (opts.updateCheck) updateCheck();
@@ -391,7 +397,7 @@ export async function setup(opts) {
   }
   say("\nReady. Start with:  npm start   (Windows: double-click Orcastrike.cmd)");
   const c = contractSummary();
-  if (!c?.verified) say("Next, once per machine with normal internet access:  node scripts/contract_test.mjs   (SETUP.md step 5)");
+  if (!c?.verified) say("The app verifies the live data sources by itself once it runs (Overview page shows the result).");
 }
 
 function convertToGit(opts) {

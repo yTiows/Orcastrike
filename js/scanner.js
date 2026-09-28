@@ -51,7 +51,7 @@ export function assessQuote(q, nowMs, cfg = DEFAULTS, parserStatus = {}) {
     return { status: q.state, reason: q.reason ?? q.state };
   }
   const pStatus = q.parser_status ?? parserStatus[q.source] ?? "UNVERIFIED";
-  if (pStatus !== "VERIFIED") return { status: "UNVERIFIED", reason: `PARSER_UNVERIFIED for ${q.source} (${pStatus}): run scripts/contract_test.mjs where the network allows` };
+  if (pStatus !== "VERIFIED") return { status: "UNVERIFIED", reason: `PARSER_UNVERIFIED for ${q.source} (${pStatus}): not yet verified against a live response. The local app checks daily (Overview → Verify now)` };
   if (q.synthetic) return { status: "INVALID", reason: "SYNTHETIC data is never evidence" };
   if (q.state !== "AVAILABLE" && q.state !== "STALE") return { status: "INVALID", reason: `unknown state ${String(q.state)}` };
   if (typeof q.canonical_item_id !== "string" || q.canonical_item_id.trim() === "") return { status: "INVALID", reason: "canonical_item_id empty" };

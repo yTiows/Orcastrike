@@ -48,7 +48,7 @@ Shipped app (static, no framework, no bundler):
 - `js/backtest.js` — single-market historical simulation (historical context only); cross-market verdict
 - `js/events.js` — event schema validation, 7d-before/after price delta
 - `js/app.js` — controller/bootstrap (loads state, derives views, routes UI actions)
-- `ui/dashboard.js`, `ui/scanner-table.js`, `ui/ledger-view.js`, `ui/events-view.js`, `ui/settings-view.js`
+- `ui/overview.js`, `ui/opportunities.js`, `ui/portfolio.js`, `ui/markets.js`, `ui/settings-view.js`, shared `ui/components.js` (v2.2 layout, DECISIONS D-55)
 - `config/defaults.js` (deep-frozen), `config/fees.js`
 - `static/events.json`, `static/watchlist-starter.json`
 

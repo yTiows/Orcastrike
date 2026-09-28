@@ -28,16 +28,21 @@ import { buildScanContext, quoteKey, scan, valuationFromQuotes } from "./scanner
 import * as store from "./state.js";
 import { openStorage } from "./storage.js";
 import { circuitBreakerStatus } from "./tiers.js";
-import * as dashboard from "../ui/dashboard.js";
-import * as researchView from "../ui/research-view.js";
-import * as scannerView from "../ui/scanner-table.js";
-import * as ledgerView from "../ui/ledger-view.js";
-import * as eventsView from "../ui/events-view.js";
+import * as overview from "../ui/overview.js";
+import * as opportunities from "../ui/opportunities.js";
+import * as portfolio from "../ui/portfolio.js";
+import * as markets from "../ui/markets.js";
 import * as settingsView from "../ui/settings-view.js";
+import { ago } from "../ui/components.js";
 
 const SOURCES = ["steam", "csfloat", "skinport"];
-const VIEWS = { dashboard, research: researchView, scanner: scannerView, ledger: ledgerView, events: eventsView, settings: settingsView };
+const VIEWS = { overview, opportunities, portfolio, markets, settings: settingsView };
+// Old bookmarks keep working.
+const LEGACY_TABS = { dashboard: "overview", research: "opportunities", ledger: "portfolio", scanner: "markets", events: "markets" };
 const RESEARCH_POLL_MS = 30000;
+// Prices refresh by themselves: every minute from the local app (cheap), every 5 minutes through
+// the optional hosted Worker (rate limits).
+const QUOTES_EVERY_MS = { daemon: 60000, worker: 300000 };
 
 export const app = {
   cfg: null,
@@ -161,7 +166,8 @@ export function render() {
     if (ks) {
       const engaged = Boolean(app.research.control?.automation?.kill_switch?.engaged);
       ks.disabled = !app.daemon.available;
-      ks.textContent = !app.daemon.available ? "Kill switch (no daemon: nothing to stop)" : engaged ? "Kill switch ENGAGED · release" : "Kill switch";
+      ks.textContent = engaged ? "Kill switch ENGAGED · release" : "Kill switch";
+      ks.title = !app.daemon.available ? "The app isn't running, so nothing can be staged or automated." : engaged ? "Staging and automation are stopped. Click to release (asks for confirmation)." : "Stops staging and any automation immediately. Always available.";
       ks.classList.toggle("engaged", engaged);
     }
     for (const view of Object.values(VIEWS)) {
@@ -176,27 +182,38 @@ export function render() {
 }
 
 function renderStatusBar(d) {
-  const el = document.getElementById("status-bar");
-  if (!el) return;
-  const daemon = app.daemon.available
-    ? app.daemon.health?.db?.degraded
-      ? "Daemon: DEGRADED (database integrity check failed; read-only, no sampling)"
-      : `Daemon: online${app.daemon.health?.synthetic_upstream ? " (SYNTHETIC upstream)" : ""}`
-    : "Daemon: not connected (research features off)";
-  const worker = app.client.configured ? (app.health ? (app.health.ok ? "Quotes backend: online" : `Quotes backend: ${app.health.reason}`) : "Quotes backend: checking…") : "Quotes backend: not configured";
-  const cb = `Circuit breaker: ${d.breaker.state}${d.breaker.active && d.breaker.expires_at ? ` until ${d.breaker.expires_at}` : ""}`;
-  const ks = app.research.control?.automation?.kill_switch?.engaged ? "KILL SWITCH ENGAGED" : null;
-  const refresh = app.refreshing ? `Refreshing ${app.progress.done}/${app.progress.total}` : app.lastRefreshIso ? `Quotes fetched ${app.lastRefreshIso}` : "Quotes not fetched";
-  const storage = `Ledger storage: ${app.storageKind}`;
-  const parts = [daemon, worker, cb, ks, refresh, storage, ...app.storageWarnings].filter(Boolean);
-  el.replaceChildren(
-    ...parts.map((t) => {
-      const s = document.createElement("span");
-      s.textContent = t;
-      if (/breaker: (ACTIVE|INVALID)|not configured|NOT_CONFIGURED|KILL SWITCH|memory|not be|lost|SYNTHETIC|failed/.test(t)) s.className = "warn";
-      return s;
-    }),
-  );
+  const pill = document.getElementById("status-pill");
+  const notices = document.getElementById("notice-bar");
+  if (pill) {
+    const h = app.daemon.health;
+    let tone;
+    let text;
+    if (!app.daemon.available) [tone, text] = ["warn", app.client.configured ? "Ledger + hosted prices" : "App not running"];
+    else if (h?.db?.degraded) [tone, text] = ["bad", "Read-only: database problem"];
+    else if (h?.synthetic_upstream) [tone, text] = ["warn", "Test data (SYNTHETIC)"];
+    else if (h?.verify?.running) [tone, text] = ["live", "Verifying data sources…"];
+    else [tone, text] = ["live", `Live · ${h?.data?.last_observation_at ? `updated ${ago(h.data.last_observation_at, d.nowMs)}` : "starting"}`];
+    const dot = document.createElement("span");
+    dot.className = `dot ${tone}`;
+    const label = document.createElement("span");
+    label.textContent = text;
+    pill.replaceChildren(dot, label);
+  }
+  if (notices) {
+    const list = [];
+    if (app.research.control?.automation?.kill_switch?.engaged) list.push(["bad", "Kill switch engaged: staging and any automation are stopped."]);
+    if (d.breaker.active) list.push(["warn", `Daily loss limit reached: new opportunities paused until ${d.breaker.expires_at ?? "the cooldown ends"}.`]);
+    for (const w of app.storageWarnings) list.push(["warn", `Ledger storage: ${w}`]);
+    for (const e of app.settingsErrors) list.push(["warn", `Settings: ${e}`]);
+    notices.replaceChildren(
+      ...list.map(([tone, t]) => {
+        const el = document.createElement("div");
+        el.className = tone === "bad" ? "error-box" : "callout";
+        el.textContent = t;
+        return el;
+      }),
+    );
+  }
 }
 
 // ---- persistence -----------------------------------------------------------------------
@@ -257,7 +274,8 @@ export async function syncLedger() {
 
 export async function refreshResearch() {
   if (!app.daemon.available) return;
-  const [control, std, umb, evidence, paper, real, quality, coverage, fees, settings] = await Promise.all([
+  const [health, control, std, umb, evidence, paper, real, quality, coverage, fees, settings] = await Promise.all([
+    app.daemon.get("/api/v2/health"),
     app.daemon.get("/api/v2/control"),
     app.daemon.get("/api/v2/opportunities?all=1&limit=400"),
     app.daemon.get("/api/v2/opportunities?mode=umbra&all=1&limit=400"),
@@ -270,6 +288,7 @@ export async function refreshResearch() {
     app.daemon.get("/api/v2/settings"),
   ]);
   const r = app.research;
+  if (health.ok) applyDaemonHealth(health.body);
   if (control.ok) r.control = control.body;
   if (std.ok) r.opportunities.standard = std.body;
   if (umb.ok) r.opportunities.umbra = umb.body;
@@ -282,6 +301,27 @@ export async function refreshResearch() {
   if (settings.ok) r.settings = settings.body;
   r.lastPollAt = new Date().toISOString();
   render();
+}
+
+// The daemon's own verification status drives the Level 1 scanner's parser gate too.
+function applyDaemonHealth(h) {
+  app.daemon.health = h;
+  if (h?.parser_status_by_source) app.parserVerification = h.parser_status_by_source;
+}
+
+// Runs the live contract check now, then follows it until it finishes (a couple of minutes at most).
+export async function verifyNow() {
+  const r = await app.daemon.post("/api/v2/verify", { confirm: true });
+  const deadline = Date.now() + 5 * 60000;
+  const poll = async () => {
+    const h = await app.daemon.get("/api/v2/health");
+    if (h.ok) applyDaemonHealth(h.body);
+    render();
+    if (h.ok && h.body.verify?.running && Date.now() < deadline) setTimeout(poll, 3000);
+    else refreshResearch();
+  };
+  await poll();
+  return r;
 }
 
 async function daemonAction(path, body) {
@@ -436,10 +476,21 @@ export function doSetWatchlist(items) {
 
 // ---- boot --------------------------------------------------------------------------
 
+const navHandlers = new Map();
+function navigate(tab, opts) {
+  if (location.hash.slice(1) !== tab) location.hash = tab;
+  showTab(tab);
+  navHandlers.get(tab)?.(opts);
+}
+
 function showTab(name) {
-  const tab = VIEWS[name] ? name : "dashboard";
+  const tab = VIEWS[name] ? name : LEGACY_TABS[name] ?? "overview";
   for (const section of document.querySelectorAll("[data-view]")) section.hidden = section.dataset.view !== tab;
   for (const link of document.querySelectorAll("[data-tab]")) link.setAttribute("aria-current", link.dataset.tab === tab ? "page" : "false");
+  // Narrow screens scroll the tab strip; keep the current tab in view without moving the page.
+  const strip = document.querySelector(".tabs");
+  const current = strip?.querySelector('[aria-current="page"]');
+  if (strip && current && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
 }
 
 async function loadLedgerFromStorage() {
@@ -508,6 +559,9 @@ async function boot() {
     releaseKillSwitch: () => daemonAction("/api/v2/kill-switch", { engaged: false, confirm: true }),
     saveDaemonSettings: (settings) => daemonAction("/api/v2/settings", { settings }),
     fsaSupported: () => fsaSupported(),
+    verifyNow,
+    navigate,
+    onNavigate: (tab, fn) => navHandlers.set(tab, fn),
     render,
   };
   for (const [name, view] of Object.entries(VIEWS)) {
@@ -532,16 +586,17 @@ async function boot() {
   showTab(location.hash.slice(1));
   render();
 
-  if (app.client.configured) {
-    app.health = await app.client.health();
-    render();
-  }
   if (app.daemon.available) {
+    applyDaemonHealth(app.daemon.health);
     if (app.watchlist.length) await app.daemon.post("/api/v2/watchlist", { items: app.watchlist });
     await refreshResearch();
     await syncLedger();
     setInterval(refreshResearch, RESEARCH_POLL_MS);
     setInterval(syncLedger, 5 * 60000);
+  }
+  if (app.client.configured) {
+    refreshQuotes();
+    setInterval(refreshQuotes, app.daemon.available ? QUOTES_EVERY_MS.daemon : QUOTES_EVERY_MS.worker);
   }
   await maybeDailyBackup();
   // Countdowns and breaker expiry are derived from timestamps; re-derive every 30s.

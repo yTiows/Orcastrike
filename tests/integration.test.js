@@ -70,6 +70,10 @@ test("secrets never leave the daemon; write guards hold", async () => {
     assert.ok(!text.includes(FAKE_KEY), `${path} leaked the key`);
   }
   assert.ok(!logText().includes(FAKE_KEY), "log leaked the key");
+  // Key setup text is served for the Overview checklist: a prompt that hides input, never a value.
+  const { key_setup: ks } = await (await fetch(`${base}/api/v2/health`)).json();
+  assert.match(ks.windows_powershell, /Read-Host "CSFloat API key" -AsSecureString/);
+  assert.match(ks.macos_linux, /read -rs /);
   assert.equal((await post("/api/v2/watchlist", { items: [] }, null)).status, 403);
   assert.equal((await post("/api/v2/watchlist", { items: [] }, "https://evil.example")).status, 403);
   const bad = await fetch(`${base}/api/v2/watchlist`, { method: "POST", headers: { "content-type": "text/plain", origin: base }, body: "{}" });
@@ -194,7 +198,7 @@ test("fee calibration accept: needs explicit confirmation and valid overrides; c
 });
 
 test("static UI is served from the repo on every platform; traversal and non-allow-listed files are refused", async () => {
-  for (const path of ["/", "/index.html", "/styles.css", "/js/app.js", "/ui/research-view.js", "/static/events.json"]) {
+  for (const path of ["/", "/index.html", "/styles.css", "/js/app.js", "/ui/opportunities.js", "/static/events.json"]) {
     const r = await fetch(`${base}${path}`);
     assert.equal(r.status, 200, path);
     assert.match(r.headers.get("content-security-policy") ?? "", /default-src 'self'/, path);
@@ -209,4 +213,24 @@ test("shutdown endpoint: same-origin JSON plus explicit confirmation only", asyn
   assert.equal((await post("/api/v2/shutdown", { confirm: true }, "https://evil.example")).status, 403, "cross-origin");
   assert.equal((await post("/api/v2/shutdown", {})).status, 422, "no confirmation");
   assert.ok((await fetch(`${base}/api/v2/health`)).ok, "still running");
+});
+
+test("live verification over HTTP: disabled with a SYNTHETIC upstream; health carries per-source status and data summary", async () => {
+  const v = await (await fetch(`${base}/api/v2/verify`)).json();
+  assert.equal(v.contract, "verify@1");
+  assert.match(v.disabled, /SYNTHETIC/);
+  assert.equal((await post("/api/v2/verify", {})).status, 422);
+  assert.equal((await post("/api/v2/verify", { confirm: true })).status, 409);
+  assert.equal((await post("/api/v2/verify", { confirm: true }, "https://evil.example")).status, 403);
+  assert.equal((await post("/api/v2/watchlist", { items: [ITEM] })).status, 200);
+  const h = await waitFor(async () => {
+    const r = await (await fetch(`${base}/api/v2/health`)).json();
+    return r.data?.tracked_items >= 1 && r.data.observations_total > 0 ? r : null;
+  });
+  assert.deepEqual(Object.keys(h.parser_status_by_source).sort(), ["csfloat", "skinport", "steam"]);
+  assert.ok(Object.values(h.parser_status_by_source).every((s) => s !== "VERIFIED"));
+  assert.ok(h.data.observations_total > 0);
+  assert.ok(h.data.tracked_items >= 1);
+  assert.ok(h.data.first_observation_at);
+  assert.ok(h.data.sources.csfloat.ok > 0);
 });
