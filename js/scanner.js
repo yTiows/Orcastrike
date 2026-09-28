@@ -42,11 +42,17 @@ export function quoteKey(source, item) {
 
 // Data sanity + freshness for one quote. status: FRESH | STALE | MISSING | INVALID |
 // UNAVAILABLE | RATE_LIMITED | NOT_CONFIGURED. Only FRESH may enter a calculation.
-export function assessQuote(q, nowMs, cfg = DEFAULTS) {
+// parserStatus: { steam|csfloat|skinport: "VERIFIED" | ... } from static/parser-verification.json
+// (Worker path) or the daemon's per-quote parser_status. Unverified parsers never feed a claim
+// (DECISIONS D-38).
+export function assessQuote(q, nowMs, cfg = DEFAULTS, parserStatus = {}) {
   if (!q) return { status: "MISSING", reason: "no quote fetched" };
   if (["UNAVAILABLE", "RATE_LIMITED", "NOT_CONFIGURED", "INVALID"].includes(q.state)) {
     return { status: q.state, reason: q.reason ?? q.state };
   }
+  const pStatus = q.parser_status ?? parserStatus[q.source] ?? "UNVERIFIED";
+  if (pStatus !== "VERIFIED") return { status: "UNVERIFIED", reason: `PARSER_UNVERIFIED for ${q.source} (${pStatus}): run scripts/contract_test.mjs where the network allows` };
+  if (q.synthetic) return { status: "INVALID", reason: "SYNTHETIC data is never evidence" };
   if (q.state !== "AVAILABLE" && q.state !== "STALE") return { status: "INVALID", reason: `unknown state ${String(q.state)}` };
   if (typeof q.canonical_item_id !== "string" || q.canonical_item_id.trim() === "") return { status: "INVALID", reason: "canonical_item_id empty" };
   if (!Number.isSafeInteger(q.price_usd_cents) || q.price_usd_cents <= 0) return { status: "INVALID", reason: "price must be integer USD cents > 0" };
@@ -74,7 +80,7 @@ export function assessQuote(q, nowMs, cfg = DEFAULTS) {
 }
 
 // Everything the scanner needs from settings, ledger and breaker, validated once per scan.
-export function buildScanContext({ cfg = DEFAULTS, balances, circuitBreaker, nowMs, payoutRail }) {
+export function buildScanContext({ cfg = DEFAULTS, balances, circuitBreaker, nowMs, payoutRail, parserStatus = {} }) {
   const risk = validateRiskConfig(cfg.risk);
   if (!risk.ok) throw new Error(`invalid risk config: ${risk.errors.join("; ")}`);
   const f = cfg.filters;
@@ -106,6 +112,7 @@ export function buildScanContext({ cfg = DEFAULTS, balances, circuitBreaker, now
   return {
     cfg,
     nowMs,
+    parserStatus,
     filters,
     capital,
     circuitBreaker: circuitBreaker ?? { active: false, state: "INACTIVE" },
@@ -124,8 +131,8 @@ function row(base, status, reasons, extra = {}) {
 // One buy-market → sell-market evaluation for one unit.
 export function evaluatePair({ item, buyMarket, sellMarket, buyQuote, sellQuote, ctx }) {
   const { cfg, nowMs, filters } = ctx;
-  const a = assessQuote(buyQuote, nowMs, cfg);
-  const b = assessQuote(sellQuote, nowMs, cfg);
+  const a = assessQuote(buyQuote, nowMs, cfg, ctx.parserStatus);
+  const b = assessQuote(sellQuote, nowMs, cfg, ctx.parserStatus);
   const base = {
     item,
     buy_market: buyMarket,
@@ -326,12 +333,12 @@ export function scan({ items, quotes, ctx }) {
 // Inventory valuation rule: lowest current listing across cash sell markets, counted only
 // where that market's listing_depth meets MIN_LISTING_DEPTH and the quote is fresh.
 // Otherwise INSUFFICIENT_DATA — never zero, never acquisition cost.
-export function valuationFromQuotes(quotes, item, nowMs, cfg = DEFAULTS) {
+export function valuationFromQuotes(quotes, item, nowMs, cfg = DEFAULTS, parserStatus = {}) {
   const candidates = [];
   const why = [];
   for (const market of CASH_SELL_MARKETS) {
     const q = quotes.get(quoteKey(market, item));
-    const a = assessQuote(q, nowMs, cfg);
+    const a = assessQuote(q, nowMs, cfg, parserStatus);
     if (a.status !== "FRESH") {
       why.push(`${market}: ${a.status}`);
       continue;

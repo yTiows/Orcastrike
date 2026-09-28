@@ -16,12 +16,17 @@
 <body>
   <header class="top">
     <div class="brand">
-      <h1>Skin Arbitrage Terminal</h1>
-      <p class="tagline">Displays and records. It never buys, sells or lists anything — you act on a marketplace yourself, then record it here.</p>
+      <h1>Orcastrike <span class="muted">Skin research terminal</span></h1>
+      <p class="tagline">Observes, tests hypotheses and records. It never buys, sells or lists anything: execution is OFF, and no mode or theme turns it on.</p>
     </div>
-    <div id="status-bar" class="status-bar" role="status" aria-live="polite"></div>
+    <div class="header-row">
+      <div id="status-bar" class="status-bar" role="status" aria-live="polite"></div>
+      <button type="button" id="kill-switch" class="kill" title="Stops staging and any automation immediately. Always available.">Kill switch</button>
+    </div>
+    <div id="umbra-banner" class="umbra-banner" role="status" hidden></div>
     <nav class="tabs" aria-label="Sections">
       <a href="#dashboard" data-tab="dashboard">Dashboard</a>
+      <a href="#research" data-tab="research">Research</a>
       <a href="#scanner" data-tab="scanner">Scanner</a>
       <a href="#ledger" data-tab="ledger">Ledger</a>
       <a href="#events" data-tab="events">Events</a>
@@ -30,6 +35,7 @@
   </header>
   <main>
     <section data-view="dashboard"></section>
+    <section data-view="research" hidden></section>
     <section data-view="scanner" hidden></section>
     <section data-view="ledger" hidden></section>
     <section data-view="events" hidden></section>

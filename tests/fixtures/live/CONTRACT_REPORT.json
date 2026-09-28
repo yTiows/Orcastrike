@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-09-28T03:03:46.033Z",
+  "run_at": "2026-09-28T03:39:21.173Z",
   "command": "node scripts/contract_test.mjs   # optional: CSFLOAT_API_KEY=... in the environment",
   "node": "v22.22.2",
   "results": [
@@ -7,7 +7,7 @@
       "endpoint": "frankfurter_latest",
       "status": "BLOCKED",
       "reason": "HTTP 403 (upstream or egress proxy)",
-      "latency_ms": 112
+      "latency_ms": 99
     },
     {
       "endpoint": "steam_priceoverview",
@@ -19,7 +19,7 @@
       "endpoint": "steam_listing_page",
       "status": "BLOCKED",
       "reason": "HTTP 403 (upstream or egress proxy)",
-      "latency_ms": 7
+      "latency_ms": 21
     },
     {
       "endpoint": "steam_histogram",
@@ -30,13 +30,13 @@
       "endpoint": "skinport_items",
       "status": "BLOCKED",
       "reason": "HTTP 403 (upstream or egress proxy)",
-      "latency_ms": 67
+      "latency_ms": 226
     },
     {
       "endpoint": "skinport_sales_history",
       "status": "BLOCKED",
       "reason": "HTTP 403 (upstream or egress proxy)",
-      "latency_ms": 31
+      "latency_ms": 30
     },
     {
       "endpoint": "csfloat_listings",

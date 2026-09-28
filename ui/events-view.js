@@ -49,13 +49,13 @@ export function update(app) {
   els.table.innerHTML = app.eventsError
     ? `<p class="error-text">static/events.json could not be loaded: ${escapeHtml(app.eventsError)}</p>`
     : events.length
-      ? `<table><thead><tr><th>Type</th><th>Name</th><th>Start</th><th>End</th><th>Confidence (source)</th><th>Source</th><th>Retrieved</th><th>Methodology</th></tr></thead><tbody>${events
+      ? `<div class="table-wrap"><table><thead><tr><th>Type</th><th>Name</th><th>Start</th><th>End</th><th>Confidence (source)</th><th>Source</th><th>Retrieved</th><th>Methodology</th></tr></thead><tbody>${events
           .map(
             (e) => `<tr><td>${escapeHtml(e.type)}</td><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.start_date)}</td><td>${escapeHtml(e.end_date)}</td>
             <td>${escapeHtml(e.confidence)}</td><td><a href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener noreferrer">source</a></td>
             <td>${escapeHtml(e.retrieval_date)}</td><td class="small">${escapeHtml(e.methodology)}</td></tr>`,
           )
-          .join("")}</tbody></table>`
+          .join("")}</tbody></table></div>`
       : `<p class="muted">No events.</p>`;
   els.rejected.innerHTML = rejected.length
     ? `<div class="error-box"><strong>${rejected.length} event entr${rejected.length === 1 ? "y" : "ies"} rejected by schema validation (not shown above):</strong><ul>${rejected

@@ -45,8 +45,11 @@ function balances(deployable, { cash = deployable, banked = 0, exposure = 0, com
   };
 }
 
-function ctx({ bal = balances(20000), breaker, cfg = DEFAULTS } = {}) {
-  return buildScanContext({ cfg, balances: bal, circuitBreaker: breaker, nowMs: NOW, payoutRail: "bank" });
+// SYNTHETIC quotes below are hand-written; parsers are marked VERIFIED only for these unit tests.
+const VERIFIED = { steam: "VERIFIED", csfloat: "VERIFIED", skinport: "VERIFIED" };
+
+function ctx({ bal = balances(20000), breaker, cfg = DEFAULTS, parserStatus = VERIFIED } = {}) {
+  return buildScanContext({ cfg, balances: bal, circuitBreaker: breaker, nowMs: NOW, payoutRail: "bank", parserStatus });
 }
 
 const pair = (buyQuote, sellQuote, c = ctx(), buyMarket = "steam", sellMarket = "csfloat") =>
@@ -148,7 +151,17 @@ test("non-AVAILABLE worker states and sanity failures → INSUFFICIENT_DATA, nev
     assert.ok(!JSON.stringify(r).includes("NaN"));
   }
   assert.equal(pair(q("steam", 1000), undefined).eligibility_status, "INSUFFICIENT_DATA");
-  assert.equal(assessQuote(q("csfloat", 1500), NOW).status, "FRESH");
+  assert.equal(assessQuote(q("csfloat", 1500), NOW, DEFAULTS, VERIFIED).status, "FRESH");
+});
+
+test("D-38: quotes from UNVERIFIED parsers or SYNTHETIC sources never enter a calculation", () => {
+  const unverified = pair(q("steam", 2000), q("csfloat", 3000), ctx({ parserStatus: { steam: "VERIFIED", csfloat: "UNVERIFIED" } }));
+  assert.equal(unverified.eligibility_status, "INSUFFICIENT_DATA");
+  assert.equal(unverified.calc, null);
+  assert.match(unverified.reasons.join(" "), /PARSER_UNVERIFIED for csfloat/);
+  assert.equal(pair(q("steam", 2000), q("csfloat", 3000), ctx({ parserStatus: {} })).eligibility_status, "INSUFFICIENT_DATA");
+  assert.equal(pair(q("steam", 2000), q("csfloat", 3000, { parser_status: "VERIFIED", synthetic: true })).eligibility_status, "INSUFFICIENT_DATA");
+  assert.equal(pair(q("steam", 2000), q("csfloat", 3000, { parser_status: "UNVERIFIED" })).eligibility_status, "INSUFFICIENT_DATA", "daemon per-quote status wins");
 });
 
 test("below the minimum viable filter → not an opportunity (excluded from rows)", () => {
@@ -205,13 +218,14 @@ test("inventory valuation: lowest depth-qualified listing; single anomalous list
     [quoteKey("csfloat", ITEM), q("csfloat", 900, { depth: 1 })], // anomalous cheap single listing
     [quoteKey("skinport", ITEM), q("skinport", 950)], // depth unmeasurable
   ]);
-  const v = valuationFromQuotes(quotes, ITEM, NOW);
+  const v = valuationFromQuotes(quotes, ITEM, NOW, DEFAULTS, VERIFIED);
   assert.equal(v.state, "INSUFFICIENT_DATA");
   quotes.set(quoteKey("csfloat", ITEM), q("csfloat", 1000, { depth: 6 }));
-  const ok = valuationFromQuotes(quotes, ITEM, NOW);
+  const ok = valuationFromQuotes(quotes, ITEM, NOW, DEFAULTS, VERIFIED);
   assert.deepEqual(ok, { state: "OK", unit_value_cents: 1000, market: "csfloat", listing_depth: 6 });
+  assert.equal(valuationFromQuotes(quotes, ITEM, NOW).state, "INSUFFICIENT_DATA", "unverified parsers never value inventory");
   quotes.set(quoteKey("csfloat", ITEM), q("csfloat", 1000, { depth: 6, ageSec: 9999 }));
-  assert.equal(valuationFromQuotes(quotes, ITEM, NOW).state, "INSUFFICIENT_DATA"); // stale never values
+  assert.equal(valuationFromQuotes(quotes, ITEM, NOW, DEFAULTS, VERIFIED).state, "INSUFFICIENT_DATA"); // stale never values
 });
 
 test("watchlist capped at MAX_TRACKED_ITEMS (100), deduplicated", () => {

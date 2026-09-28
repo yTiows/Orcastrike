@@ -81,6 +81,16 @@ export function coreRoutes(ctx) {
       }),
     },
     {
+      // v1 Worker contract: the UI's quotes client probes this when the daemon serves it.
+      method: "GET",
+      path: "/api/health",
+      handler: () => ({
+        time: new Date().toISOString(),
+        served_by: "daemon",
+        sources: { steam: "CONFIGURED", skinport: "CONFIGURED", fx: "CONFIGURED", csfloat: (ctx.env.CSFLOAT_API_KEY ?? "").trim() ? "CONFIGURED" : "NOT_CONFIGURED" },
+      }),
+    },
+    {
       method: "GET",
       path: "/api/quote",
       handler: ({ query }) => {

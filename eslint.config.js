@@ -18,4 +18,6 @@ export default [
   { files: ["js/**", "ui/**", "config/**"], languageOptions: { globals: { ...globals.browser } } },
   { files: ["worker/**"], languageOptions: { globals: { ...globals.serviceworker } } },
   { files: ["tests/**", "scripts/**", "daemon/**", "eslint.config.js"], languageOptions: { globals: { ...globals.node } } },
+  // Playwright callbacks run inside the page.
+  { files: ["scripts/browser-smoke.mjs"], languageOptions: { globals: { ...globals.node, ...globals.browser } } },
 ];

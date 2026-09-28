@@ -26,7 +26,8 @@ function isPoint(p) {
   return p && /^\d{4}-\d{2}-\d{2}$/.test(p.date) && Number.isSafeInteger(p.price_usd_cents) && p.price_usd_cents > 0;
 }
 
-export function simulateSingleMarket(points, { nowMs, cfg = DEFAULTS } = {}) {
+// detail: also return per-sample net profit (cents, 1 unit) for HISTORICAL_SIMULATED_PROFIT.
+export function simulateSingleMarket(points, { nowMs, cfg = DEFAULTS, detail = false } = {}) {
   const holdDays = cfg.BACKTEST_HOLD_DAYS;
   const lookbackDays = cfg.BACKTEST_LOOKBACK_DAYS;
   const minSamples = cfg.BACKTEST_MIN_SAMPLES;
@@ -48,6 +49,7 @@ export function simulateSingleMarket(points, { nowMs, cfg = DEFAULTS } = {}) {
 
   const gross = [];
   const net = [];
+  const profits = [];
   for (const p of points) {
     const buyMs = dateMs(p.date);
     if (buyMs < windowStart) continue;
@@ -65,6 +67,7 @@ export function simulateSingleMarket(points, { nowMs, cfg = DEFAULTS } = {}) {
     if (r.state !== "OK") continue;
     gross.push(marginBps(sell - p.price_usd_cents, p.price_usd_cents));
     net.push(r.net_margin_bps);
+    profits.push({ net_profit_cents: r.net_profit_cents, buy_date: p.date });
   }
   const window = { window_start: new Date(windowStart).toISOString().slice(0, 10), window_end: new Date(nowMs).toISOString().slice(0, 10) };
   if (net.length < minSamples) {
@@ -78,6 +81,7 @@ export function simulateSingleMarket(points, { nowMs, cfg = DEFAULTS } = {}) {
     median_gross_change_bps: medianInt(gross),
     median_net_margin_bps: medianInt(net),
     positive_net_share_bps: mulDivRoundHalfUp(net.filter((x) => x > 0).length, BPS, net.length),
+    ...(detail ? { samples_detail: profits } : {}),
   };
 }
 

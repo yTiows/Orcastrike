@@ -12,6 +12,10 @@ export function mount(root, app) {
   root.innerHTML = `
     <h2>Dashboard</h2>
     <div class="cards" id="dash-balances"></div>
+    <section class="panel">
+      <h3>Profit: five separate figures <span class="muted">(never summed or merged)</span></h3>
+      <div class="cards" id="dash-figures"></div>
+    </section>
     <div id="dash-alerts"></div>
     <div class="grid-2">
       <section class="panel">
@@ -36,6 +40,7 @@ export function mount(root, app) {
       <p id="dash-chart-sim" class="muted"></p>
     </section>`;
   els = {
+    figures: root.querySelector("#dash-figures"),
     balances: root.querySelector("#dash-balances"),
     alerts: root.querySelector("#dash-alerts"),
     tiers: root.querySelector("#dash-tiers"),
@@ -74,6 +79,8 @@ export function update(app, d) {
       card("USD cash balance", formatCents(b.usd_cash_balance_cents), "Real cash on hand, incl. banked profit"),
       card("Banked profit (earmark)", formatCents(b.banked_profit_cents), "Part of cash; never redeployed automatically"),
       card("Free cash", formatCents(b.free_cash_cents), "Cash − banked"),
+      card("Reserved cash", formatCents(b.reserved_cash_cents), "Earmarked for open orders (part of cash)"),
+      card("Available cash", formatCents(b.available_cash_cents), "Cash − banked − reserved; what a buy may use"),
       card("Inventory value", `${formatCents(b.inventory_value_cents)} ${inv}`, "Lowest depth-qualified cash-market listing"),
       card("Deployable capital", `${formatCents(b.deployable_capital_cents)} ${lb}`, "Cash − banked + inventory. Drives tiers and sizing.", "primary"),
       card("Steam Wallet", formatCents(b.steam_wallet_balance_cents), "NOT cash. Never included in deployable capital.", "wallet"),
@@ -90,26 +97,29 @@ export function update(app, d) {
     ].join("");
   }
 
+  renderFigures(d.figures);
+
   // Stop-loss flags: informational only.
   const alerts = [];
   if (b.ok) {
     const thresholdBps = rateToBps(app.cfg.STOP_LOSS_FLAG_THRESHOLD);
     for (const lot of b.open_lots) {
       const v = b.lot_valuations.find((x) => x.lot_id === lot.lot_id);
-      const f = stopLossFlag({ acquisitionCostCents: lot.quantity * lot.buy_price_cents, currentValueCents: v?.state === "OK" ? v.value_cents : null, thresholdBps });
-      if (f.state === "FLAGGED") alerts.push(`Review: ${lot.quantity}× ${lot.canonical_item_id} is down ≥ ${formatBpsPct(thresholdBps)} vs cost (unrealized ${formatCents(f.unrealized_pnl_cents)}). Flag only — nothing is sold or listed.`);
+      const qty = lot.remaining_quantity ?? lot.quantity;
+      const f = stopLossFlag({ acquisitionCostCents: qty * lot.buy_price_cents, currentValueCents: v?.state === "OK" ? v.value_cents : null, thresholdBps });
+      if (f.state === "FLAGGED") alerts.push(`Review: ${qty}× ${lot.canonical_item_id} is down ≥ ${formatBpsPct(thresholdBps)} vs cost (unrealized ${formatCents(f.unrealized_pnl_cents)}). Flag only — nothing is sold or listed.`);
     }
   }
   if (d.breaker.state === "INVALID") alerts.push("Stored circuit-breaker timestamp is corrupt; treated as ACTIVE. Clear it in Settings.");
   els.alerts.innerHTML = alerts.map((a) => `<div class="alert-box">${escapeHtml(a)}</div>`).join("");
 
   const trades = app.ledger?.trades ?? [];
-  els.tiers.innerHTML = `<table class="compact"><thead><tr><th>Tier band</th><th>Flips</th><th>Median net margin</th></tr></thead><tbody>${tierCompressionStats(trades, app.cfg.TIER_COMPRESSION_MIN_FLIPS, app.cfg.TIERS)
+  els.tiers.innerHTML = `<div class="table-wrap"><table class="compact"><thead><tr><th>Tier band</th><th>Flips</th><th>Median net margin</th></tr></thead><tbody>${tierCompressionStats(trades, app.cfg.TIER_COMPRESSION_MIN_FLIPS, app.cfg.TIERS)
     .map(
       (s) =>
         `<tr><td>Tier ${s.tier}</td><td>${s.flips}</td><td>${s.state === "OK" ? formatBpsPct(s.median_net_margin_bps) : `<span class="status s-INSUFFICIENT_DATA">INSUFFICIENT_DATA</span> (${s.flips}/${s.required})`}</td></tr>`,
     )
-    .join("")}</tbody></table>`;
+    .join("")}</tbody></table></div>`;
 
   const current = els.chartItem.value;
   els.chartItem.innerHTML = app.watchlist.map((i) => `<option${i === current ? " selected" : ""}>${escapeHtml(i)}</option>`).join("");
@@ -144,9 +154,9 @@ export function renderPriceChart(container, points, title) {
   const fallback = (why) => {
     const rows = points.slice(-30).reverse();
     container.innerHTML = `<p class="muted">Chart unavailable (${escapeHtml(why)}). Last ${rows.length} days:</p>
-      <table class="compact"><thead><tr><th>Date (UTC)</th><th>Price</th><th>Units sold</th></tr></thead><tbody>${rows
+      <div class="table-wrap"><table class="compact"><thead><tr><th>Date (UTC)</th><th>Price</th><th>Units sold</th></tr></thead><tbody>${rows
         .map((p) => `<tr><td>${escapeHtml(p.date)}</td><td>${formatCents(p.price_usd_cents)}</td><td>${p.volume}</td></tr>`)
-        .join("")}</tbody></table>`;
+        .join("")}</tbody></table></div>`;
   };
   if (typeof window.Chart !== "function") return fallback("Chart.js did not load");
   try {
@@ -184,4 +194,44 @@ export function renderPriceChart(container, points, title) {
     fallback("chart rendering failed");
   }
   return undefined;
+}
+
+// ---- the five profit figures (numeric tickers in UMBRA; off with prefers-reduced-motion) ----
+
+const shown = new Map();
+
+function tick(el, from, to) {
+  const reduce = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || from === null || from === to || document.documentElement.dataset.mode !== "umbra") {
+    el.textContent = formatCents(to);
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / 600);
+    // Display-only interpolation between two integer-cent values; lands exactly on `to`.
+    el.textContent = formatCents(p === 1 ? to : from + Math.trunc((to - from) * p));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function renderFigures(figures) {
+  if (!els.figures.children.length) {
+    els.figures.innerHTML = figures
+      .map(
+        (f) => `<div class="card figure" data-fig="${f.name}"><div class="card-label"><code>${escapeHtml(f.name)}</code> <span class="tag tag-${escapeHtml(f.category)}">${escapeHtml(f.category)}</span></div>
+        <div class="card-value" data-v></div><div class="card-note" data-n></div></div>`,
+      )
+      .join("");
+  }
+  for (const f of figures) {
+    const card = els.figures.querySelector(`[data-fig="${f.name}"]`);
+    const v = card.querySelector("[data-v]");
+    if (Number.isSafeInteger(f.value_cents)) tick(v, shown.get(f.name) ?? null, f.value_cents);
+    else v.textContent = f.state;
+    shown.set(f.name, Number.isSafeInteger(f.value_cents) ? f.value_cents : null);
+    card.querySelector("[data-n]").textContent = `${f.state} · ${f.basis}`;
+    card.title = `Does: ${f.does}\nDoes not: ${f.does_not}`;
+  }
 }

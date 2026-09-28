@@ -36,6 +36,10 @@ export function mount(root, app) {
       <div class="row-buttons"><button type="submit" class="primary">Save</button><button type="button" id="settings-reset">Reset to defaults</button></div>
       <div class="result" aria-live="polite"></div>
     </form>
+    <section class="panel" id="daemon-settings">
+      <h3>Research settings (daemon)</h3>
+      <div id="ds-body"><p class="muted">Needs the local daemon.</p></div>
+    </section>
     <section class="panel">
       <h3>Circuit breaker</h3>
       <p id="cb-status"></p>
@@ -44,13 +48,13 @@ export function mount(root, app) {
     </section>
     <section class="panel">
       <h3>Fee constants (read-only, see FEES.md)</h3>
-      <table class="compact"><tbody>
+      <div class="table-wrap"><table class="compact"><tbody>
         <tr><td>Steam sell fee</td><td>${pct(FEES.STEAM_SELL_FEE)} of gross (model: ${escapeHtml(FEES.STEAM_FEE_MODEL)})</td></tr>
         <tr><td>CSFloat sell fee</td><td>${pct(FEES.CSFLOAT_SELL_FEE)}</td></tr>
         <tr><td>CSFloat payout</td><td>bank ${pct(FEES.CSFLOAT_PAYOUT_FEE_RATE.bank)}, USDC ${pct(FEES.CSFLOAT_PAYOUT_FEE_RATE.usdc)} (mid-range of published 0.5–2.5%)</td></tr>
         <tr><td>Skinport sell fee</td><td>${pct(FEES.SKINPORT_SELL_FEE_STANDARD)} standard, ${pct(FEES.SKINPORT_SELL_FEE_OVER_1000EUR)} for items ≥ €1,000, ${pct(FEES.SKINPORT_SELL_FEE_PRIVATE_LISTING)} private</td></tr>
         <tr><td>Skinport payout</td><td>${pct(FEES.SKINPORT_PAYOUT_FEE_RATE)} (bank/FX costs excluded)</td></tr>
-      </tbody></table>
+      </tbody></table></div>
     </section>`;
   els = { form: root.querySelector("#settings-form"), cbStatus: root.querySelector("#cb-status"), cbClear: root.querySelector("#cb-clear") };
   fill(app);
@@ -90,6 +94,36 @@ export function mount(root, app) {
     fill(app);
   });
   els.cbClear.addEventListener("click", () => app.actions.clearInvalidBreaker());
+  els.ds = root.querySelector("#ds-body");
+  els.ds.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const out = e.target.querySelector(".result");
+    const settings = {};
+    for (const input of e.target.querySelectorAll("[data-key]")) {
+      const raw = input.value.trim();
+      if (raw === "") continue;
+      settings[input.dataset.key] = /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw;
+    }
+    const r = await app.actions.saveDaemonSettings(settings);
+    out.className = `result ${r.ok ? "ok-text" : "error-text"}`;
+    out.textContent = r.ok ? `Saved.${r.body?.warnings?.length ? ` Warnings: ${r.body.warnings.join("; ")}` : ""}` : (r.body?.errors ?? [r.error]).join("; ");
+  });
+}
+
+// Daemon user settings (numeric ones; mode/UMBRA/automation live in the Research tab).
+function daemonSettingsHtml(app) {
+  const s = app.research.settings;
+  if (!s) return "<p class=\"muted\">Loading…</p>";
+  const rows = s.schema
+    .filter((e) => e.class === "user_setting" && typeof e.default === "number")
+    .map((e) => {
+      const cur = e.key.split(".").reduce((o, k) => o?.[k], s.effective);
+      return `<label>${escapeHtml(e.key)} <span class="muted">[${e.min}–${e.max}] ${escapeHtml(e.unit ?? "")} · ${escapeHtml(e.doc)}${e.dangerous ? ` · ⚠ ${escapeHtml(e.dangerous)}` : ""}</span>
+        <input data-key="${escapeHtml(e.key)}" inputmode="decimal" value="${escapeHtml(String(cur ?? ""))}"></label>`;
+    })
+    .join("");
+  return `<form class="form">${rows}<button type="submit" class="primary">Save research settings</button><div class="result" aria-live="polite"></div></form>
+    <p class="small muted">Invariants and developer defaults are listed in CONFIGURATION.md and cannot be changed here.</p>`;
 }
 
 function fill(app) {
@@ -111,6 +145,7 @@ function fill(app) {
 }
 
 export function update(app, d) {
+  if (app.daemon.available && !els.ds.contains(document.activeElement)) els.ds.innerHTML = daemonSettingsHtml(app);
   const b = d.breaker;
   els.cbStatus.textContent =
     b.state === "INACTIVE"

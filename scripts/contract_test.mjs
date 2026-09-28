@@ -142,6 +142,29 @@ await probe("csfloat_sales_history", `https://csfloat.com/api/v1/history/${enc(I
 const report = { run_at: now.toISOString(), command: COMMAND, node: process.version, results };
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, "CONTRACT_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`);
+// Shipped summary for the browser (Level 1 scanner via the Worker): a source's quotes count only
+// when its parsers passed on a LIVE fixture in this run.
+const status = (ep) => {
+  const r = results.find((x) => x.endpoint === ep);
+  return r?.status === "PASS" ? "VERIFIED" : r?.status === "BLOCKED" ? "BLOCKED" : "UNVERIFIED";
+};
+const both = (a, b) => (status(a) === "VERIFIED" && status(b) === "VERIFIED" ? "VERIFIED" : status(a) === "VERIFIED" ? status(b) : status(a));
+writeFileSync(
+  join(ROOT, "static", "parser-verification.json"),
+  `${JSON.stringify(
+    {
+      generated_at: now.toISOString(),
+      generated_by: "scripts/contract_test.mjs",
+      sources: {
+        steam: both("steam_listing_page", "steam_histogram"),
+        csfloat: status("csfloat_listings"),
+        skinport: both("skinport_items", "frankfurter_latest"),
+      },
+    },
+    null,
+    2,
+  )}\n`,
+);
 
 for (const r of results) console.log(`${r.status.padEnd(10)} ${r.endpoint.padEnd(24)} ${r.reason ?? r.parse?.status ?? ""}`);
 const blocked = results.filter((r) => r.status === "BLOCKED" || r.status === "UNVERIFIED");

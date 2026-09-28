@@ -18,7 +18,8 @@
     "deploy:worker": "wrangler deploy",
     "deploy:pages": "npm run package:pages && wrangler pages deploy dist --project-name skin-arb-terminal",
     "contract": "node scripts/contract_test.mjs",
-    "netcheck": "node scripts/netcheck.mjs"
+    "netcheck": "node scripts/netcheck.mjs",
+    "smoke:browser": "node --disable-warning=ExperimentalWarning scripts/browser-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
