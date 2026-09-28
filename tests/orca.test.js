@@ -97,6 +97,8 @@ function scratchRepos() {
   const seed = join(base, "seed");
   git(base, "init", "-q", seed);
   git(seed, "checkout", "-q", "-b", "main");
+  // Same line-ending rule as the real repository, so Windows' core.autocrlf=true doesn't apply.
+  writeFileSync(join(seed, ".gitattributes"), "* text=auto eol=lf\n");
   writeFileSync(join(seed, "package-lock.json"), "{}\n");
   writeFileSync(join(seed, "app.txt"), "v1\n");
   git(seed, "add", ".");
@@ -177,7 +179,7 @@ test("update --convert: a ZIP-style folder becomes a git checkout; data kept, di
   // A ZIP download is the same files without .git: copy the tree, then edit one file.
   const zip = join(base, "zip");
   mkdirSync(zip);
-  for (const f of ["package-lock.json", "app.txt"]) writeFileSync(join(zip, f), readFileSync(join(work, f)));
+  for (const f of [".gitattributes", "package-lock.json", "app.txt"]) writeFileSync(join(zip, f), readFileSync(join(work, f)));
   writeFileSync(join(zip, "app.txt"), "edited in the zip folder\n");
   mkdirSync(join(zip, ".orcastrike-data"));
   writeFileSync(join(zip, ".orcastrike-data", "keep.txt"), "mine");
