@@ -23,7 +23,7 @@ import { getSettings, integrityCheck, migrate, openDb, parserStatuses, purgeRawP
 import { UpstreamClient } from "./http-client.js";
 import { makeLogger } from "./redact.js";
 import { Scheduler } from "./scheduler.js";
-import { createDaemonServer } from "./server.js";
+import { createDaemonServer, HttpError } from "./server.js";
 import { loadVerification, syncParserVersions } from "./verification.js";
 
 const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), ".."));
@@ -50,7 +50,13 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     /* best effort on filesystems without POSIX modes */
   }
   const dbPath = join(dataDir, "orcastrike.sqlite");
-  const db = openDb(dbPath);
+  let db;
+  try {
+    db = openDb(dbPath);
+  } catch (err) {
+    // Unreadable file: refuse to start and touch nothing. The browser ledger is unaffected.
+    throw new DatabaseUnreadableError(dbPath, err);
+  }
   const integrity = integrityCheck(db);
   const startedAt = new Date().toISOString();
   let verification = loadVerification(env.ORCASTRIKE_CONTRACT_REPORT || undefined);
@@ -93,7 +99,15 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     closePaperTrades(db, cfg, Date.now(), { rail });
     runAutopilot(db, cycle, cfg, Date.now(), (o, itemId) => engine.persistForce(o, itemId));
   });
-  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...controlRoutes(ctx), ...evidenceRoutes(ctx), ...researchRoutes(ctx), ...coreRoutes(ctx)];
+  let routes = [...extraRoutes.flatMap((f) => f(ctx)), ...controlRoutes(ctx), ...evidenceRoutes(ctx), ...researchRoutes(ctx), ...coreRoutes(ctx)];
+  if (!integrity.ok) {
+    // DEGRADED: never write to a damaged file. Reads may still fail; the server turns that into 500.
+    routes = routes.map((r) =>
+      r.method === "GET"
+        ? r
+        : { ...r, handler: () => { throw new HttpError(503, "database integrity check failed; daemon is read-only (DEGRADED). See FAILURE_STATES.md"); } },
+    );
+  }
   const server = createDaemonServer({ root: ROOT, port, routes, log });
   await new Promise((r) => server.listen(port, "127.0.0.1", r));
 
@@ -142,8 +156,26 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
   return { ctx, server, stop, port };
 }
 
+export class DatabaseUnreadableError extends Error {
+  constructor(path, cause) {
+    super(
+      `database ${path} is unreadable (${cause?.message ?? "error"}). Nothing was modified. ` +
+        "Recovery: move the file aside (e.g. rename it to orcastrike.sqlite.corrupt) and restart for a fresh database, " +
+        "or restore a copy of the data directory. The browser ledger is separate and unaffected; the UI re-syncs it.",
+    );
+    this.name = "DatabaseUnreadableError";
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const d = await startDaemon();
+  let d;
+  try {
+    d = await startDaemon();
+  } catch (err) {
+    if (!(err instanceof DatabaseUnreadableError)) throw err;
+    makeLogger(process.stderr, process.env)("error", err.message);
+    process.exit(2);
+  }
   const shutdown = async () => {
     await d.stop();
     process.exit(0);

@@ -324,7 +324,13 @@ export function migrate(db) {
 
 // Integrity check used at startup and by the corrupt-database failure path.
 export function integrityCheck(db) {
-  const rows = db.prepare("PRAGMA integrity_check").all();
+  let rows;
+  try {
+    rows = db.prepare("PRAGMA integrity_check").all();
+  } catch (err) {
+    // A badly damaged file can make the check itself throw; that is a failed check.
+    return { ok: false, detail: err?.message ?? "integrity_check failed" };
+  }
   const ok = rows.length === 1 && rows[0].integrity_check === "ok";
   return { ok, detail: ok ? "ok" : rows.map((r) => r.integrity_check).slice(0, 5).join("; ") };
 }

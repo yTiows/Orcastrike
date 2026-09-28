@@ -3,7 +3,9 @@
 // only to exercise code paths; they are flagged synthetic and never count as evidence.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { closeSync, mkdtempSync, openSync, readFileSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { insertMarketObservation, insertSourceRequest, migrate, openDb, purgeRawPayloads, tx, upsertItem } from "../daemon/db.js";
@@ -12,6 +14,8 @@ import { runJob } from "../daemon/pipeline.js";
 import { capacityPlan, planJobs } from "../daemon/scheduler.js";
 import { redact } from "../daemon/redact.js";
 import { RESEARCH_DEFAULTS } from "../config/settings-schema.js";
+import { startDaemon } from "../daemon/main.js";
+import { freePort } from "./helpers/synthetic-stack.js";
 
 const NOW = Date.parse("2026-09-28T12:00:00.000Z");
 const iso = (ms) => new Date(ms).toISOString();
@@ -156,6 +160,37 @@ test("pipeline: upstream 429 → RATE_LIMITED, host backoff, no retry", async ()
   assert.equal(db.prepare("SELECT code, severity FROM data_quality_events").get().code, "RATE_LIMITED");
 });
 
+test("pipeline: network down, timeout, missing key and 401 each store no observation and record why", async () => {
+  const env = { ORCASTRIKE_UPSTREAM_OVERRIDE: "http://127.0.0.1:9", ORCASTRIKE_SYNTHETIC: "1" };
+  const failing = (err) => new UpstreamClient({ rateLimits: RESEARCH_DEFAULTS.ratelimit, env, fetchImpl: async () => { throw err; }, now: () => NOW });
+  const job = { endpoint: "steam_priceoverview", item: "A" };
+  const run = (db, client, e = env, j = job) => runJob({ db, client, job: j, cfg: RESEARCH_DEFAULTS, env: e, nowMs: NOW, tracked: new Set(["A"]) });
+  const count = (db) => db.prepare("SELECT COUNT(*) AS n FROM market_observations").get().n;
+
+  let db = freshDb();
+  assert.equal((await run(db, failing(Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } })))).outcome, "NETWORK_ERROR");
+  assert.equal(count(db), 0);
+  assert.equal(db.prepare("SELECT code FROM data_quality_events").get().code, "NETWORK_ERROR");
+
+  db = freshDb();
+  assert.equal((await run(db, failing(Object.assign(new Error("aborted"), { name: "AbortError" })))).outcome, "TIMEOUT");
+  assert.equal(count(db), 0);
+  assert.deepEqual({ ...db.prepare("SELECT outcome, error FROM source_requests").get() }, { outcome: "TIMEOUT", error: "timeout after 8s" });
+
+  db = freshDb();
+  const { client, calls } = mockClient(() => ({ body: [] }));
+  const nk = await run(db, client, env, { endpoint: "csfloat_listings", item: "A" });
+  assert.equal(nk.outcome, "NOT_CONFIGURED");
+  assert.equal(calls.length, 0, "no request without a key");
+  assert.equal(db.prepare("SELECT code FROM data_quality_events").get().code, "AUTH_MISSING");
+
+  db = freshDb();
+  const unauth = mockClient(() => ({ status: 401, body: { error: "bad key" } }));
+  const r401 = await run(db, unauth.client, { ...env, CSFLOAT_API_KEY: "TEST_ONLY_wrong" }, { endpoint: "csfloat_listings", item: "A" });
+  assert.equal(r401.outcome, "HTTP_ERROR");
+  assert.equal(count(db), 0);
+});
+
 test("pipeline: Skinport without fresh FX stores no price and never EUR", async () => {
   const db = freshDb();
   const { client, env } = mockClient(() => ({ body: [{ market_hash_name: "A", currency: "EUR", min_price: 10.0, quantity: 5 }] }));
@@ -219,4 +254,45 @@ test("transactions roll back on error", () => {
     throw new Error("boom");
   }));
   assert.equal(db.prepare("SELECT count(*) AS n FROM items").get().n, 0);
+});
+
+test("unreadable database file: daemon refuses to start, prints recovery, modifies nothing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "orca-corrupt-"));
+  const bytes = randomBytes(8192);
+  writeFileSync(join(dir, "orcastrike.sqlite"), bytes);
+  const r = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", "daemon/main.js"], {
+    env: { PATH: process.env.PATH, ORCASTRIKE_DATA_DIR: dir, ORCASTRIKE_PORT: "0" },
+    encoding: "utf8",
+    timeout: 15000,
+  });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /unreadable .*Nothing was modified.*Recovery/);
+  assert.ok(!/\n\s+at /.test(r.stderr), "no stack trace");
+  assert.ok(readFileSync(join(dir, "orcastrike.sqlite")).equals(bytes), "file untouched");
+});
+
+test("damaged database: integrity check fails closed → DEGRADED, no sampling, writes refused", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "orca-degraded-"));
+  const path = join(dir, "orcastrike.sqlite");
+  const db = openDb(path);
+  db.exec("PRAGMA journal_mode = DELETE");
+  for (let i = 0; i < 2000; i += 1) upsertItem(db, `Item ${i} ${"x".repeat(50)}`, { nowIso: iso(NOW) });
+  db.close();
+  const fd = openSync(path, "r+");
+  writeSync(fd, Buffer.alloc(200, 0xff), 0, 200, Math.floor(statSync(path).size * 0.7));
+  closeSync(fd);
+  const port = await freePort();
+  const logs = [];
+  const d = await startDaemon({ env: { PATH: process.env.PATH }, port, dataDir: dir, startScheduler: false, log: (level, msg) => logs.push(`${level} ${msg}`) });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    const h = await (await fetch(`${base}/api/v2/health`)).json();
+    assert.equal(h.db.integrity, "CORRUPT");
+    assert.equal(h.db.degraded, true);
+    assert.match(logs.join("\n"), /DEGRADED \(no sampling\)/);
+    const w = await fetch(`${base}/api/v2/watchlist`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: "{\"items\":[]}" });
+    assert.equal(w.status, 503);
+  } finally {
+    await d.stop();
+  }
 });

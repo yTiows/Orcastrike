@@ -116,7 +116,7 @@ function controlsHtml(app) {
   return `
     <div class="grid-2">
       <fieldset class="filters"><legend>Operating mode</legend>${modes}
-        <p class="hint">RESEARCH computes and logs. PAPER logs a paper trade for every eligible alert. ASSISTED shows per-transaction approvals (execution stays external).</p></fieldset>
+        <p class="hint">RESEARCH computes and logs; standard mode stages nothing. PAPER also logs a paper trade for every eligible alert. ASSISTED means you approve and perform every transaction yourself on the marketplace; in-app approvals need an execution path (L2), which doesn't exist in this build, so it behaves like RESEARCH.</p></fieldset>
       <fieldset class="filters"><legend>Automation level (default OFF = L0)</legend>${levels}
         <p class="hint">L1 stages external links only. L2/L3 need a verified execution API, which doesn't exist in this build. No mode or theme grants execution.</p></fieldset>
     </div>

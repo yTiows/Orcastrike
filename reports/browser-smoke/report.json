@@ -1,19 +1,19 @@
 {
-  "run_at": "2026-09-28T03:55:00.274Z",
+  "run_at": "2026-09-28T04:07:59.383Z",
   "upstream": "SYNTHETIC (loopback)",
   "browser": "chromium (headless)",
-  "passed": 42,
+  "passed": 44,
   "failed": 0,
   "results": [
     {
       "name": "storage: IndexedDB is primary",
       "ok": true,
-      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T03:54:46.519Z; the original was kept"
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T04:07:45.267Z; the original was kept"
     },
     {
       "name": "storage: v1 localStorage ledger migrated, original kept",
       "ok": true,
-      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T03:54:46.519Z; the original was kept"
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T04:07:45.267Z; the original was kept"
     },
     {
       "name": "storage: localStorage source untouched",
@@ -41,6 +41,11 @@
       "detail": "Recorded. Net $46.00 → USD cash; realized $6.00; banked $1.80. | \n            AK-47 | Redline (Field-Tested)1 / 3csfloat\n            $20.00$20.002026-09-01 10:00 UTC\n            eligible\n            INSUFFICIENT_DATA\n            —\n            INSUFFICIENT_DATA\n            INSUFFICIENT\n            UNKNOWN\n            strat-d83d768d"
     },
     {
+      "name": "ledger: Steam sale shows the C4 comparison (15%-of-gross used vs Valve exact)",
+      "ok": true,
+      "detail": "2026-09-21 10:00 UTCAK-47 | Redline (Field-Tested)\n          1 (1)steam\n          $20.00$3.00$0.00\n          $17.00 → Steam WalletPer unit: 15%-of-gross $17.00 (used) vs Valve exact $17.39.\n          —\n          $20.00-$3.00\n          -15.00%480h$0.00\n          $564.20 (lower bound)\n          strat-d83d768d · fees-v1@2026-09-27"
+    },
+    {
       "name": "storage: ledger survives reload from IndexedDB",
       "ok": true,
       "detail": ""
@@ -48,7 +53,7 @@
     {
       "name": "dashboard: five separate profit figures",
       "ok": true,
-      "detail": "REALIZED_NET_PROFIT REAL\n        $6.00COMPLETE · 1 closed REAL trade(s)PAPER_NET_PROFIT PAPER\n        $0.00COMPLETE · 0 CLOSED paper trade(s); 0 VOID excludedHISTORICAL_SIMULATED_PROFIT SIMULATED\n        UNAVAILABLEUNAVAILABLE · no Steam-only history simulation loaded this sessionMARK_TO_MARKET_UNRE"
+      "detail": "REALIZED_NET_PROFIT REAL\n        $3.00COMPLETE · 2 closed REAL trade(s)PAPER_NET_PROFIT PAPER\n        $0.00COMPLETE · 0 CLOSED paper trade(s); 0 VOID excludedHISTORICAL_SIMULATED_PROFIT SIMULATED\n        UNAVAILABLEUNAVAILABLE · no Steam-only history simulation loaded this sessionMARK_TO_MARKET_UNRE"
     },
     {
       "name": "dashboard: chart area never blank without Chart.js",
@@ -79,6 +84,11 @@
       "name": "research: SYNTHETIC label on rows",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "research: every row shows the engine's exact status",
+      "ok": true,
+      "detail": "[]"
     },
     {
       "name": "research: PARSER_UNVERIFIED surfaced",

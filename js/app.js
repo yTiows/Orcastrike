@@ -178,7 +178,11 @@ export function render() {
 function renderStatusBar(d) {
   const el = document.getElementById("status-bar");
   if (!el) return;
-  const daemon = app.daemon.available ? `Daemon: online${app.daemon.health?.synthetic_upstream ? " (SYNTHETIC upstream)" : ""}` : "Daemon: not connected (research features off)";
+  const daemon = app.daemon.available
+    ? app.daemon.health?.db?.degraded
+      ? "Daemon: DEGRADED (database integrity check failed; read-only, no sampling)"
+      : `Daemon: online${app.daemon.health?.synthetic_upstream ? " (SYNTHETIC upstream)" : ""}`
+    : "Daemon: not connected (research features off)";
   const worker = app.client.configured ? (app.health ? (app.health.ok ? "Quotes backend: online" : `Quotes backend: ${app.health.reason}`) : "Quotes backend: checking…") : "Quotes backend: not configured";
   const cb = `Circuit breaker: ${d.breaker.state}${d.breaker.active && d.breaker.expires_at ? ` until ${d.breaker.expires_at}` : ""}`;
   const ks = app.research.control?.automation?.kill_switch?.engaged ? "KILL SWITCH ENGAGED" : null;

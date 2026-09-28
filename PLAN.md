@@ -131,3 +131,53 @@ curl -s "$W/api/history?source=steam&item=AK-47%20%7C%20Redline%20(Field-Tested)
 curl -s -o /dev/null -w "%{http_code}\n" -X POST "$W/api/quote"                     # 405
 curl -s -i "$W/api/health" | grep -i -E "authorization|set-cookie" && echo LEAK || echo "no auth headers"
 ```
+
+# v2: research and evidence system (2026-09-28)
+
+## Architecture in one paragraph
+
+The **daemon** (`daemon/`, Node ≥ 22.13, built-in `node:sqlite`, no new npm dependencies) is the primary data plane. It samples Steam, Skinport, CSFloat and Frankfurter within per-host token buckets, stores append-only observations in `.orcastrike-data/orcastrike.sqlite`, builds snapshot groups, computes opportunities with a full trace, runs forward paper trading, and serves the UI plus a JSON contract on `http://127.0.0.1:8790`. The Cloudflare **Worker** stays as the thin v1 fallback. The **browser** keeps the ledger (IndexedDB) and syncs real trades and capital to the daemon for evidence. ARCHITECTURE_DELTA.md has the details, EVIDENCE.md the gates, CONFIGURATION.md every setting, and FAILURE_STATES.md what happens when things break.
+
+## First run on your machine (in order)
+
+```sh
+npm ci
+npm run check && npm run audit:secrets      # lint + tests + secret scan; must all pass
+node scripts/netcheck.mjs                   # measures reachability and latency to each source (daemon placement, D-39)
+node scripts/contract_test.mjs              # live contract test; optional: CSFLOAT_API_KEY=... in the environment
+```
+
+The contract test stores sanitized LIVE fixtures under `tests/fixtures/live/`, writes `CONTRACT_REPORT.json` and `static/parser-verification.json`, and exits 0 only when every probe passes. Until it does, every parser is UNVERIFIED and **no opportunity can be ELIGIBLE** (D-38). That is the intended output. Commit the new fixtures and report after checking them for personal data. The sanitizer removes seller identity and credential-like keys, but review them anyway.
+
+## Running the daemon
+
+```sh
+npm run daemon                              # http://127.0.0.1:8790 (loopback only)
+CSFLOAT_API_KEY=... npm run daemon          # enable CSFloat; the key lives only in this process's environment
+ORCASTRIKE_PORT=8791 ORCASTRIKE_DATA_DIR=/path npm run daemon
+```
+
+Open `http://127.0.0.1:8790/`. The daemon serves the UI on the same origin, so no Worker URL is needed. The Research tab shows evidence, opportunities (every blocked reason and trace), paper vs real trades, data quality and coverage. Evidence needs calendar time: `hold_adverse_move` needs 30 snapshot pairs H days apart (7 days minimum), and SIGNAL_EVIDENCE needs ≥ 14 days plus ≥ 30 closed paper trades.
+
+Keep your own copy of `.orcastrike-data/` if the observation history matters to you: the daemon keeps one copy only (FAILURE_STATES.md, "Corrupt database").
+
+## Browser smoke test (not in `npm test`, D-44)
+
+```sh
+npm i -g playwright@1.56.1 && npx playwright install chromium   # once, if not installed
+npm run smoke:browser                       # real Chromium against a SYNTHETIC daemon; 44 checks
+```
+
+Screenshots go to `reports/browser-smoke/` (git-ignored). `report.json` is committed.
+
+## Dedicated trading account (security)
+
+Use a **separate Steam account and separate marketplace accounts that hold only the inventory being traded**, never your main inventory. The app never stores Steam credentials, cookies or authenticator data (P0-2), and it can't execute anything (C1). A dedicated account still limits the damage of a compromised marketplace session, a mis-click on a staged link, or a trade reversal. Give the CSFloat API key only to the daemon's environment (or `wrangler secret put` for the Worker). Never paste it into the UI, a file in the repo, or a chat.
+
+## Env vars (v2 additions)
+
+CONFIGURATION.md ("Environment variables") is generated from the code and is authoritative: `CSFLOAT_API_KEY` (daemon env or Worker secret), `ORCASTRIKE_PORT`, `ORCASTRIKE_DATA_DIR`, `ORCASTRIKE_ENGINE_INTERVAL_MS`, `ORCASTRIKE_CONTRACT_REPORT`. Test only: `ORCASTRIKE_SYNTHETIC` and `ORCASTRIKE_UPSTREAM_OVERRIDE`, which is loopback-only and refuses to start without `ORCASTRIKE_SYNTHETIC=1`. `NTFY_TOPIC` is read by nothing (notifications BLOCKED).
+
+## Status (2026-09-28)
+
+Phases 0–5 are implemented and tested against SYNTHETIC inputs. Live verification (PH0-LIVE), daemon placement (PH0-PLACE), deploy, L2/L3 and ntfy are BLOCKED or UNVERIFIED. REQUIREMENTS.md has one status per row.

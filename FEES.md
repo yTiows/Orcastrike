@@ -58,3 +58,31 @@ cash, and are never a scanner sell leg.
 - The CSFloat payout tier for a specific account (see the pinned mid-range above).
 - Steam's minimum-fee floor at very low prices under the default flat model (the Valve model
   handles it).
+
+## Fee model versions and calibration (v2, 2026-09-28)
+
+- **Base version** `fees-v1@2026-09-27` is exactly `config/fees.js` as documented above
+  (`js/research/fee-model.js` `BASE_FEE_MODEL`). Buy-side fees are 0 bps on every market, because
+  every observed entry price is already the buyer-pays listing price. Deposit and payment-method
+  fees stay unmodeled (above).
+- Every opportunity, paper trade and recorded sale stores the `fee_model_version` in force at its
+  timestamp. Old records are never recomputed with a newer model.
+- **Calibration** (`js/research/fee-calibration.js`) compares the net you actually received (the
+  optional receipt field on a sale) with the net the model computed. With ≥ 3 receipts for one
+  market it writes a PROPOSED_CALIBRATION with observed, expected, difference and possible
+  reasons:
+  - **Steam:** if the receipts match Valve's exact fee-on-top method, it proposes
+    `STEAM_FEE_MODEL = valve_fee_on_top` (C4).
+  - **CSFloat / Skinport:** if every difference has the same sign, it reports the implied total
+    fee rate and a candidate override.
+- **Nothing changes until you accept.** Acceptance (POST `/api/v2/fee-models/accept`) requires
+  `confirm: true` and a same-origin request, and accepts only these keys: `STEAM_FEE_MODEL`,
+  `CSFLOAT_SELL_FEE`, `CSFLOAT_PAYOUT_FEE_RATE`, `SKINPORT_SELL_FEE_STANDARD`,
+  `SKINPORT_SELL_FEE_OVER_1000EUR`, `SKINPORT_SELL_FEE_PRIVATE_LISTING`,
+  `SKINPORT_PAYOUT_FEE_RATE`. It creates a new dated version
+  (`fees-<date>-<overridden keys>`) with its parent and source recorded. Earlier versions are
+  never edited.
+- **C4 (Steam):** the conservative 15%-of-gross default stays. Wherever a Steam sale appears
+  (every closed-trade row and the sell confirmation), Valve's exact result is shown beside the
+  model that was used. The default changes only
+  through an accepted calibration.

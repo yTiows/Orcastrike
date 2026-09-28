@@ -4,8 +4,16 @@
 import { escapeHtml, formatBpsPct, formatCents, formatCountdown, formatIsoUtc } from "../js/format.js";
 import { LEDGER_LABEL, allocateFifo } from "../js/ledger.js";
 import { dollarsStringToCents, MoneyError, rateToBps } from "../js/money.js";
-import { steamFeeComparison } from "../js/research/fee-model.js";
+import { BASE_FEE_MODEL, steamFeeComparison } from "../js/research/fee-model.js";
 import { stopLossFlag } from "../js/tiers.js";
+
+// C4: Valve's exact fee-on-top result beside the model that was used, for every Steam sale.
+function steamC4Note(model, unitGrossCents) {
+  const c = steamFeeComparison(model ?? BASE_FEE_MODEL, unitGrossCents);
+  const exactUsed = c.default_model === "valve_fee_on_top";
+  const exact = c.valve_exact_net_cents === null ? "n/a" : formatCents(c.valve_exact_net_cents);
+  return `Per unit: 15%-of-gross ${formatCents(c.conservative_net_cents)}${exactUsed ? "" : " (used)"} vs Valve exact ${exact}${exactUsed ? " (used)" : ""}.`;
+}
 
 const MARKETS = [
   ["steam", "Steam"],
@@ -211,8 +219,7 @@ export function mount(root, app) {
     const split = t.lot_allocations.length > 1 || t.lot_allocations.some((a) => a.quantity !== t.quantity) ? ` FIFO: ${t.lot_allocations.map((a) => a.quantity).join(" + ")} unit(s).` : "";
     let c4 = "";
     if (t.sell_market === "steam") {
-      const c = steamFeeComparison(app.feeModels[t.fee_model_version], t.sell_price_cents);
-      c4 = ` Per unit: conservative model ${formatCents(c.conservative_net_cents)} (used) vs Valve exact ${c.valve_exact_net_cents === null ? "n/a" : formatCents(c.valve_exact_net_cents)}.`;
+      c4 = ` ${steamC4Note(app.feeModels[t.fee_model_version], t.sell_price_cents)}`;
     }
     return {
       result: r,
@@ -359,7 +366,7 @@ export function update(app, d) {
           (t) => `<tr><td>${escapeHtml(formatIsoUtc(t.sell_timestamp))}${incidents.has(t.trade_id) ? ' <span class="status s-BLOCKED_BY_CIRCUIT_BREAKER">REVERSAL</span>' : ""}</td><td>${escapeHtml(t.canonical_item_id)}</td>
           <td class="num">${t.quantity} (${t.lot_allocations.map((a) => a.quantity).join("+")})</td><td>${escapeHtml(t.sell_market)}</td>
           <td class="num">${formatCents(t.gross_sale_cents)}</td><td class="num">${formatCents(t.sell_fee_cents)}</td><td class="num">${formatCents(t.payout_fee_cents)}</td>
-          <td class="num">${formatCents(t.net_sale_proceeds_cents)} <span class="muted">→ ${t.proceeds_currency === "steam_wallet" ? "Steam Wallet" : "cash"}</span></td>
+          <td class="num">${formatCents(t.net_sale_proceeds_cents)} <span class="muted">→ ${t.proceeds_currency === "steam_wallet" ? "Steam Wallet" : "cash"}</span>${t.sell_market === "steam" ? `<br><span class="small muted">${escapeHtml(steamC4Note(app.feeModels[t.fee_model_version], t.sell_price_cents))}</span>` : ""}</td>
           <td class="num">${t.receipt_net_cents === null ? "—" : `${formatCents(t.receipt_net_cents)}${t.receipt_net_cents !== t.net_sale_proceeds_cents ? ` <span class="muted">(Δ ${formatCents(t.receipt_net_cents - t.net_sale_proceeds_cents)})</span>` : ""}`}</td>
           <td class="num">${formatCents(t.acquisition_cost_cents)}</td><td class="num ${t.realized_net_profit_cents < 0 ? "neg" : "pos"}">${formatCents(t.realized_net_profit_cents)}</td>
           <td class="num">${formatBpsPct(t.net_margin_bps)}</td><td class="num">${t.hold_duration_hours}h</td><td class="num">${formatCents(t.banked_allocation_cents)}</td>

@@ -1,5 +1,12 @@
 # BACKTEST_RESULTS
 
+> **Labels (v2, 2026-09-28).** "Backtest" is reserved for replaying *synchronized historical
+> cross-market data*, and that replay activates only when the evidence minimums are met
+> (EVIDENCE.md). No such data exists, so nothing in this build is a backtest in that sense. The
+> Steam-only computation below is a **historical simulation** (HISTORICAL_SIMULATED_PROFIT,
+> category SIMULATED). The daemon's paper trades are a **forward paper trading evaluation**
+> (PAPER_NET_PROFIT). The two are never combined with each other or with real results.
+
 ## Verdict
 
 **(a) Single-market historical simulation: INSUFFICIENT_DATA — not run.** Steam price history could

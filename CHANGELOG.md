@@ -1,5 +1,76 @@
 # CHANGELOG
 
+## 2.0.0 — 2026-09-28 (research and evidence system; not deployed, not live-verified)
+
+### Added
+- **Phase 0:**
+  - `scripts/contract_test.mjs` stores sanitized LIVE fixtures, diffs them against every parser, and writes `CONTRACT_REPORT.json` and `static/parser-verification.json`.
+  - `scripts/netcheck.mjs` measures daemon placement.
+  - New docs: DATA_SOURCE_MATRIX.md, ARCHITECTURE_DELTA.md.
+- **Daemon** (`daemon/`, Node ≥ 22.13, `node:sqlite`, no new npm dependencies):
+  - Append-only SQLite with versioned migrations.
+  - Per-host token buckets with 429 backoff.
+  - Sanitized raw store with retention.
+  - Normalizers, validator, data-quality events, snapshot groups (COMPLETE / PARTIAL / STALE / CONFLICTING / INSUFFICIENT / INVALID).
+  - Scheduler, including a capacity-vs-demand plan.
+  - Loopback-only HTTP with Host allow-list, same-origin JSON POSTs and CSP.
+  - Serves the UI and the v1 Worker contract.
+- **Opportunity engine** (`js/research/`):
+  - The defined math: hold_adverse_move, reversal_reserve, entry_cost, pessimistic_proceeds, expected_net_profit, rank_metric.
+  - Pattern premiums KNOWN / ESTIMATED / UNKNOWN (Doppler phases cited).
+  - Sizing with Kelly as advisory only; stop trigger.
+  - Metric semantics: every metric states what it DOES and DOES NOT mean.
+  - Versions: strategy, signal, fee model, parser.
+  - Parsers without a passing LIVE fixture can't produce an ELIGIBLE opportunity (D-38).
+- **Evidence:**
+  - Ladder 0–6 and the SIGNAL_EVIDENCE / EXECUTION_EVIDENCE / STRATEGY_VALIDATION gates (the v1 30-flip gate was renamed, and stays real-only).
+  - Forward paper trading evaluation.
+  - Five separate profit figures.
+  - Fee calibration proposals and dated fee model versions (accepted only with explicit confirmation).
+  - New doc: EVIDENCE.md.
+- **Ledger v2:**
+  - FIFO partial-lot splitting.
+  - Reserve/release, receipts, reversal incidents, version tags.
+  - IndexedDB storage with a non-destructive localStorage migration.
+  - Checksummed export/import, and a daily File System Access backup (Chromium; UNVERIFIED elsewhere).
+  - Explicit buckets.
+- **Control:**
+  - Operating modes.
+  - Automation ladder L0–L3 (L2/L3 can't be enabled: no verified execution API).
+  - Kill switch in the header.
+  - UMBRA ranking mode and theme:
+    - Declared bankroll; SIGNAL_EVIDENCE or the typed "unproven edge" override, labeled UNPROVEN.
+    - Full-catalog universe report and $10 floor; rails always on.
+    - Autopilot that stages L1 links and notifies in-app, and never executes.
+- **UI:**
+  - Research tab (evidence, opportunities with labels and traces, paper vs real, data quality, coverage, staged actions, fee calibration, glossary).
+  - Dashboard with the five figures.
+  - Ledger v2 forms.
+  - Daemon settings.
+  - UMBRA palette, crossfade, drift, heartbeat, row flash and tickers, all off under reduced motion.
+- **Config and docs:**
+  - CONFIGURATION.md, generated from `config/settings-schema.js` and tested for drift.
+  - FAILURE_STATES.md; a test checks that every cited test exists.
+  - REQUIREMENTS.md now has a status per row and the 10 acceptance tests in GIVEN/WHEN/THEN/FAILURE form.
+- **Tests:**
+  - 165 in `npm test` (164 pass; 1 skipped until LIVE fixtures exist): unit, contract, a real daemon process against a SYNTHETIC loopback upstream, security, contrast, docs.
+  - `scripts/browser-smoke.mjs`: 44 checks in real Chromium, desktop and 390 px, with screenshots.
+- `npm run daemon`, `npm run smoke:browser`.
+
+### Fixed during v2 (each with a regression test)
+- The daemon didn't serve `/api/health`, so the UI's quotes probe got a 404 on every load (found by the browser smoke run).
+- Settings-table state rows (ledger sync, watchlist) were validated as user settings and invalidated them.
+- A garbage database file crashed the daemon with a stack trace. It now exits with code 2, prints recovery steps, and leaves the file untouched.
+- A damaged but openable database made `integrity_check` throw and crash start-up. It now runs DEGRADED: read-only, no sampling, POSTs refused.
+- Mobile overflow on the Research and Events tabs: tables weren't wrapped, and a long select didn't shrink.
+- UMBRA accent text and white-on-accent/loss buttons failed WCAG AA. Added `--accent-text`, `--on-accent` and `--on-neg`; the palette is unchanged.
+- The C4 Steam comparison appeared only in the sell confirmation. It now appears on every Steam trade row.
+- The ASSISTED mode hint claimed in-app approvals that don't exist. The UI now says it behaves like RESEARCH.
+- Secret-scan wording finding (P0-8) was committed once, because a pipe hid the exit code. Fixed, and the scan now runs inside `npm test`.
+
+### Not done
+- Live verification (every endpoint 403 from the build container), daemon placement measurement on a real host, deploy, L2/L3 execution, ASSISTED approvals, ntfy notifications. See REQUIREMENTS.md.
+
 ## 1.0.0 — 2026-09-27 (build, not deployed)
 
 ### Added

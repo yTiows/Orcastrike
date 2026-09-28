@@ -148,6 +148,16 @@ try {
   const sellResult = await page.textContent("#f-sell .result");
   const lotRow = await page.locator("#t-lots tr", { hasText: "Redline" }).first().textContent();
   check("ledger: partial sell recorded (FIFO split)", /\b1\b/.test(lotRow) && (await page.textContent("#t-trades")).includes("Redline"), `${sellResult} | ${lotRow}`);
+  // C4: a Steam sale shows Valve's exact fee-on-top result beside the model used.
+  await page.fill("#f-sell [name=item]", ITEM);
+  await page.fill("#f-sell [name=qty]", "1");
+  await page.selectOption("#f-sell [name=market]", "steam");
+  await page.fill("#f-sell [name=price]", "20.00");
+  await page.fill("#f-sell [name=ts]", "2026-09-21T10:00");
+  await page.click("#f-sell button[type=submit]");
+  await page.waitForFunction(() => /Valve exact/.test(document.querySelector("#t-trades")?.textContent ?? ""), null, { timeout: 5000 }).catch(() => {});
+  const steamRow = await page.locator("#t-trades tr", { hasText: "steam" }).first().textContent().catch(() => "");
+  check("ledger: Steam sale shows the C4 comparison (15%-of-gross used vs Valve exact)", /\$17\.00 \(used\) vs Valve exact \$17\.39/.test(steamRow), steamRow);
   await page.screenshot({ path: join(OUT, "ledger-desktop.png"), fullPage: true });
 
   // Persistence: a reload reads the ledger back from IndexedDB, not from the v1 copy.
@@ -175,6 +185,12 @@ try {
   check("research: SYNTHETIC/UNVERIFIED data never ELIGIBLE", rows.every((r) => r.status !== "ELIGIBLE"), JSON.stringify(rows.map((r) => r.status)));
   check("research: every blocked row states its reason", rows.every((r) => r.reason.length > 0), JSON.stringify(rows.filter((r) => !r.reason)));
   check("research: SYNTHETIC label on rows", rows.every((r) => r.text.includes("SYNTHETIC")));
+  // Fidelity: the UI shows exactly the engine's status for each pair (e.g. STALE stays STALE).
+  const api = await (await fetch(`${stack.base}/api/v2/opportunities?all=1&limit=400`)).json();
+  const apiStatus = new Map(api.all.map((o) => [`${o.item}|${o.buy_source}|${o.sell_source}`, o.status]));
+  const uiStatus = await page.$$eval("#rs-opps tr[data-key]", (trs) => trs.map((tr) => [tr.dataset.key, tr.children[3]?.textContent.trim()]));
+  const mismatched = uiStatus.filter(([k, st]) => apiStatus.get(k) !== st);
+  check("research: every row shows the engine's exact status", uiStatus.length > 0 && mismatched.length === 0, JSON.stringify(mismatched));
   check("research: PARSER_UNVERIFIED surfaced", rows.some((r) => /PARSER_UNVERIFIED|UNVERIFIED/.test(r.reason)), rows[0]?.reason);
   await page.click("#rs-opps tr[data-key]");
   await page.waitForSelector("#rs-opps .trace-row");

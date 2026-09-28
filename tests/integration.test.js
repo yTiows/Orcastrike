@@ -158,3 +158,37 @@ test("control API: L2/L3 rejected; kill switch engage is always accepted, releas
   assert.equal(st.push_notifications.state, "BLOCKED");
   assert.equal((await post("/api/v2/umbra", { action: "deactivate" })).status, 200);
 });
+
+test("UMBRA cycle reports UNIVERSE_SIZE, DISCOVERY_TIME, ITEMS_SKIPPED with SKIP_REASON", async () => {
+  assert.equal((await post("/api/v2/umbra", { action: "activate", bankroll_cents: 50000, override_phrase: "unproven edge" })).status, 200);
+  try {
+    const c = await waitFor(async () => {
+      const r = await (await fetch(`${base}/api/v2/opportunities?mode=umbra&all=1`)).json();
+      return r.universe ? r : null;
+    });
+    assert.equal(c.mode, "UMBRA");
+    assert.equal(c.unproven, true);
+    for (const k of ["UNIVERSE_SIZE", "DISCOVERY_TIME", "ITEMS_SKIPPED", "SKIP_REASON", "universe_definition"]) assert.ok(k in c.universe, k);
+    assert.ok(c.universe.UNIVERSE_SIZE >= 1);
+    assert.equal(c.universe.ITEMS_SKIPPED, Object.values(c.universe.SKIP_REASON).reduce((a, b) => a + b, 0));
+    assert.ok(c.all.every((o) => o.status !== "ELIGIBLE"), "SYNTHETIC/UNVERIFIED data stays ineligible in UMBRA too");
+  } finally {
+    assert.equal((await post("/api/v2/umbra", { action: "deactivate" })).status, 200);
+  }
+});
+
+test("fee calibration accept: needs explicit confirmation and valid overrides; creates a new version, never edits the old one", async () => {
+  const before = await (await fetch(`${base}/api/v2/fee-models`)).json();
+  const proposal = { market: "steam", receipts: 3, difference_cents: 117, proposed_overrides: { STEAM_FEE_MODEL: "valve_fee_on_top" } };
+  assert.equal((await post("/api/v2/fee-models/accept", { proposal })).status, 422, "no confirm");
+  assert.equal((await post("/api/v2/fee-models/accept", { proposal: { ...proposal, proposed_overrides: { STEAM_FEE_RATE: 0 } }, confirm: true })).status, 422, "unknown override");
+  assert.equal((await post("/api/v2/fee-models/accept", { proposal, confirm: true }, "https://evil.example")).status, 403, "cross-origin");
+  const ok = await post("/api/v2/fee-models/accept", { proposal, confirm: true });
+  assert.equal(ok.status, 200);
+  const { fee_model_version: v } = await ok.json();
+  const after = await (await fetch(`${base}/api/v2/fee-models`)).json();
+  assert.equal(after.current, v);
+  assert.notEqual(v, before.current);
+  assert.ok(before.versions.every((b) => after.versions.some((a) => a.fee_model_version === b.fee_model_version && a.created_at === b.created_at)), "old versions kept unchanged");
+  assert.equal(after.proposals[0].status, "ACCEPTED");
+});

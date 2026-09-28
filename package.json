@@ -5,7 +5,7 @@
   "description": "Read-only CS2 skin cross-market spread scanner + user-recorded ledger. Displays and records; never executes trades.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.js\"",
@@ -13,6 +13,7 @@
     "check": "npm run lint && npm test",
     "audit:secrets": "node scripts/secret-scan.mjs",
     "package:pages": "node scripts/package-pages.mjs",
+    "daemon": "node --disable-warning=ExperimentalWarning daemon/main.js",
     "dev:worker": "wrangler dev",
     "dev:web": "npm run package:pages && wrangler pages dev dist --port 8788",
     "deploy:worker": "wrangler deploy",
