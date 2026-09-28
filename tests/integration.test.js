@@ -176,3 +176,17 @@ test("ledger sync validates capital and stores it", async () => {
   });
   assert.ok(cycle.capital_synced_at);
 });
+
+test("evidence report over HTTP: SYNTHETIC runs reach no evidence level; regime coverage UNKNOWN", async () => {
+  const r = await (await fetch(`${base}/api/v2/evidence`)).json();
+  assert.equal(r.contract, "evidence_report@1");
+  assert.ok(r.ladder.every((l) => l.status === "NOT_REACHED"));
+  assert.equal(r.gates.SIGNAL_EVIDENCE.pass, false);
+  assert.equal(r.gates.EXECUTION_EVIDENCE.pass, false);
+  assert.equal(r.market_regime_coverage.state, "UNKNOWN");
+  const p = await (await fetch(`${base}/api/v2/paper-trades`)).json();
+  assert.equal(p.kind, "PAPER");
+  assert.match(p.label, /forward paper trading evaluation \(not a backtest\)/);
+  const real = await (await fetch(`${base}/api/v2/real-trades`)).json();
+  assert.equal(real.kind, "REAL");
+});

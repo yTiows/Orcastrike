@@ -79,6 +79,11 @@ export class Engine {
     return computeOpportunity({ item: itemRow.market_hash_name, buyMarket: buy, sellMarket: sell, group, obs, exitSales: sales && Boolean(sales.synthetic) === synthetic ? sales : null, exitSnapshots: snaps, ctx });
   }
 
+  // Unconditional append (a paper trade must reference the exact computed opportunity).
+  persistForce(o, itemId) {
+    return this.insertOpportunity(o, itemId);
+  }
+
   persist(o, itemId) {
     const last = this.db
       .prepare("SELECT eligibility, computed_at FROM opportunities WHERE item_id = ? AND buy_source = ? AND sell_source = ? AND strategy_version = ? ORDER BY opportunity_id DESC LIMIT 1")
@@ -87,6 +92,10 @@ export class Engine {
     const changed = !last || last.eligibility !== o.status;
     const refresh = o.status === "ELIGIBLE" && last && Date.parse(o.computed_at) - Date.parse(last.computed_at) >= refreshMs;
     if (!changed && !refresh) return null;
+    return this.insertOpportunity(o, itemId);
+  }
+
+  insertOpportunity(o, itemId) {
     const m = o.math ?? {};
     const id = this.db
       .prepare(

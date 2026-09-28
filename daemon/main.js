@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import { RESEARCH_DEFAULTS, validateResearchSettings } from "../config/settings-schema.js";
 import { coreRoutes } from "./api.js";
 import { researchRoutes } from "./api-research.js";
+import { evidenceRoutes, syncRealTrades } from "./api-evidence.js";
+import { closePaperTrades, openPaperTrades, shouldPaperTrade } from "./paper.js";
 import { Engine } from "./engine.js";
 import { getSettings, integrityCheck, migrate, openDb, parserStatuses, purgeRawPayloads, recordQualityEvent } from "./db.js";
 import { UpstreamClient } from "./http-client.js";
@@ -75,7 +77,14 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
 
   const engine = new Engine({ db, getCfg: ctx.getCfg, env, log });
   ctx.engine = engine;
-  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...researchRoutes(ctx), ...coreRoutes(ctx)];
+  ctx.syncRealTrades = (trades) => syncRealTrades(db, trades);
+  engine.onCycle((cycle) => {
+    const cfg = ctx.getCfg();
+    const rail = getSettings(db)["ui.csfloat_payout_rail"] ?? "bank";
+    if (shouldPaperTrade(cfg)) openPaperTrades(db, cycle, (o, itemId) => engine.persistForce(o, itemId), Date.now());
+    closePaperTrades(db, cfg, Date.now(), { rail });
+  });
+  const routes = [...extraRoutes.flatMap((f) => f(ctx)), ...evidenceRoutes(ctx), ...researchRoutes(ctx), ...coreRoutes(ctx)];
   const server = createDaemonServer({ root: ROOT, port, routes, log });
   await new Promise((r) => server.listen(port, "127.0.0.1", r));
 
