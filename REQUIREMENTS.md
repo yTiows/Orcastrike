@@ -196,4 +196,25 @@ Test names are literal `test("…")` titles unless a file is named. "Browser smo
 
 ## Final state (2026-09-28)
 
-Filled in by the final audit below.
+**Final audit.** Fresh clone of `claude/skin-arb-terminal-spec-rtocat` at 1643350, then `npm ci`:
+
+- `npm run lint`: clean.
+- `npm test`: 165 tests, 164 pass, 0 fail, 1 skipped ("LIVE fixtures pass their parsers": there are no LIVE fixtures).
+- `npm run audit:secrets`: PASS (109 tracked files, full history, 41 shipped files).
+- `node scripts/gen-config-doc.mjs --check`: up to date.
+
+Runtime:
+
+- `npm run daemon`, real upstreams, not SYNTHETIC: starts; parsers BLOCKED/UNVERIFIED; upstream 403 → `HTTP_ERROR`, no observations; POST without Origin → 403; foreign Host → 421; UI served.
+- `npx wrangler dev` (workerd): `/api/health` OK; CSFloat `NOT_CONFIGURED`; Steam `UNAVAILABLE (upstream refused (HTTP 403))`; POST → 405.
+- `npm run smoke:browser`: 44/44.
+
+Boundary audit:
+
+- Every upstream request is a GET. The only POSTs are UI → loopback daemon.
+- The daemon binds 127.0.0.1.
+- No cookie, session or credential handling; no inline styles.
+
+Open rows: nothing is FAIL. BLOCKED rows are PH0-LIVE, MATH-9-INSTANT, MODE-ASSISTED, MODE-AUTO, AUTO-L2L3, NOTIF-NTFY, OPS-DEPLOY/OPS-SMOKE and OPS-DAEMON-LIVE. UNVERIFIED rows are PH0-PLACE, MET-BUYER, MATH-7-SEEDS and STO-NONCHROMIUM. Every one of them needs network access, credentials or an execution API that this environment doesn't have. PLAN.md lists the commands to run.
+
+No strategy is validated, no opportunity has been ELIGIBLE on real data, and nothing is deployed.
