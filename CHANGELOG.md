@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2.2.1 — 2026-09-28 (live data flow: found on a real Windows machine)
+
+Symptoms: the app showed "online", but quotes stayed "Refreshing 0 of 54", price history stayed on "Loading…", coverage showed 0.0% everywhere, Steam's listing page answered 302 and CSFloat had no key.
+
+### Fixed
+- **The engine blocked the whole app** while UMBRA was on: one cycle over a 5,000-item universe ran synchronously for 70–90 s (a full-table scan per evaluation) and was scheduled every 30 s, so HTTP requests and the collector starved. Cycles now run in short slices with an index (migration 2): 5–7 s per cycle, ≤ 60 ms at a time (D-60).
+- **Steam 302:** the redirect target is logged and reported as `STEAM_REDIRECT`; same-host, non-sign-in targets are followed once; nothing from another page is stored under the item (D-61). Failing listing pages back off exponentially instead of using Steam's whole budget every minute (D-62), so the price overview gets requests again.
+- **Skinport ran before FX existed** and stored nothing usable; it now waits for a rate, and `FX_UNAVAILABLE` resolves (D-63).
+- **Coverage** no longer shows 0% for days the app wasn't running (`not running`), and shows "Today so far" (D-64).
+- Watchlist items without data were called "not tracked"; missing quotes and history now state the collector's last request for that item (D-66).
+- Markets refresh reads prices from the local app without per-market pacing and shows every item's result and reason, so it can't sit silently at 0 of N.
+
+### Added
+- **Diagnostics** (D-65): Overview → Data sources → **Run diagnostics**, `POST /api/v2/diagnostics`, and a `doctor` check send one real request per source and show status, redirect target, elapsed time, parser result and why something was or wasn't stored. `doctor --offline` skips it.
+- Overview puts **Add your starting cash** first while there is none, with the reason: every pair is `BLOCKED_BY_TIER` until then.
+
 ## 2.2.0 — 2026-09-28 (less manual work, clearer UI)
 
 ### Changed

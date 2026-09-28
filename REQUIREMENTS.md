@@ -209,6 +209,19 @@ Test names are literal `test("…")` titles unless a file is named. "Browser smo
 | PASS | UI-LABELS | Plain-language status next to the exact engine code everywhere; row fidelity checked on the code | ui/components.js, ui/opportunities.js, ui/markets.js | Browser smoke "research: every row shows the engine's exact status" (checks `data-status` and the shown code against the API) |
 | PASS | UI-KEYHELP | CSFloat key setup shown on Overview with a Copy button, served by the daemon so client files never name a credential | daemon/api.js, ui/overview.js | "secrets never leave the daemon; write guards hold" (asserts `key_setup` is a hidden prompt, never a value); secret scan rule 4 |
 
+### Live data flow (added 2026-09-28, v2.2.1; found on a real Windows machine)
+
+| Status | ID | Requirement | Implementing file(s) | Test / verification |
+|---|---|---|---|---|
+| PASS | FLOW-ENGINE | The engine never blocks HTTP or the collector (UMBRA universe of thousands of items) | daemon/engine.js, daemon/db.js (migration 2), daemon/main.js | "regression: a UMBRA-sized engine cycle yields to the event loop and uses the pair index". Measured on a SYNTHETIC 5,000-item catalog: 70–90 s blocking per cycle → 5–7 s per cycle, ≤ 60 ms per slice; quote latency ≤ 650 ms (was ≥ 20 s timeouts). |
+| PASS | FLOW-REDIRECT | 3xx: target logged; followed only same-host, non-sign-in/consent, ≤ 2 hops, each paying a token; otherwise STEAM_REDIRECT/HTTP_REDIRECT with the target; no scraping around blocks | daemon/http-client.js, daemon/pipeline.js, daemon/quality.js | "redirects: only same-host pages that are not sign-in, age-check or consent pages are followed"; "regression: a Steam 302 to a sign-in page is not followed; STEAM_REDIRECT names the target; nothing stored"; "a same-host redirect is followed once (each hop costs a token); landing on another page stores nothing"; "a redirect to the same listing (canonical path) is followed and parsed". Where Steam's real 302 points on the user's machine is UNVERIFIED until diagnostics runs there. |
+| PASS | FLOW-BACKOFF | A failing job backs off instead of consuming its host's budget | daemon/scheduler.js | "regression: a failing urgent job backs off exponentially instead of retrying every minute" |
+| PASS | FLOW-FX | Skinport waits for a usable FX rate; FX_UNAVAILABLE resolves | daemon/scheduler.js, daemon/pipeline.js, daemon/quality.js | "regression: Skinport waits for a usable FX rate, then stores USD quotes; FX_UNAVAILABLE resolves" |
+| PASS | FLOW-COVERAGE | Coverage never reports 0% for time the app wasn't collecting; today shown | daemon/quality.js, daemon/api.js, ui/opportunities.js | "regression: coverage never shows 0% for days the app wasn't running; the first day and today are prorated" |
+| PASS | FLOW-DIAG | Doctor check and Overview Diagnostics: one real request per source with status, redirect target, elapsed time, parser result and write verdict | daemon/diagnostics.js, daemon/api.js, scripts/orca.mjs, ui/overview.js, js/app.js | "diagnostics: one real request per source, reporting status, redirect target, elapsed time, parser result and the write verdict". Against live upstreams: UNVERIFIED here (every endpoint returns 403 from this environment); run `Orcastrike.cmd doctor` on your machine. |
+| PASS | FLOW-REFRESH | Refresh shows per-item progress and per-item failure reasons | js/app.js, js/api.js, ui/markets.js, daemon/api.js | Browser smoke "markets: every item of a refresh shows its result, and each unavailable one its reason"; "regression: a watchlist item with no data yet is not called untracked; missing prices state the collector's last answer" |
+| PASS | FLOW-CASH | With no cash, Overview's first step is adding it, naming BLOCKED_BY_TIER | ui/overview.js | Browser smoke "overview: with no cash, adding it is the first step and names BLOCKED_BY_TIER" |
+
 ### Deployment
 
 | Status | ID | Requirement | Verification |

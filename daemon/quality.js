@@ -16,6 +16,8 @@ export const SEVERITY_BY_CODE = Object.freeze({
   TIMEOUT: "MEDIUM",
   NETWORK_ERROR: "MEDIUM",
   COVERAGE_LOW: "MEDIUM",
+  STEAM_REDIRECT: "MEDIUM",
+  HTTP_REDIRECT: "MEDIUM",
   RATE_LIMITED: "LOW",
 });
 
@@ -27,11 +29,13 @@ export function recordEventOnce(db, { code, source = null, endpoint = null, item
   return recordQualityEvent(db, { code, source, endpoint, item_id, detail, occurred_at, synthetic, severity: severity ?? SEVERITY_BY_CODE[code] ?? "MEDIUM" });
 }
 
-// A successful request/parse resolves the open transport and parser events of that endpoint.
-export function resolveOnRecovery(db, { source, endpoint, nowIso }) {
+// A successful request/parse resolves the open transport and parser events of that endpoint;
+// FX_UNAVAILABLE only when that run actually had a usable rate (fxResolved).
+export function resolveOnRecovery(db, { source, endpoint, nowIso, fxResolved = false }) {
+  const codes = ["PARSER_FAILURE", "HTTP_ERROR", "TIMEOUT", "NETWORK_ERROR", "RATE_LIMITED", "AUTH_MISSING", "STEAM_REDIRECT", "HTTP_REDIRECT", ...(fxResolved ? ["FX_UNAVAILABLE"] : [])];
   const open = db
-    .prepare("SELECT event_id FROM data_quality_events WHERE resolved_at IS NULL AND source IS ? AND endpoint IS ? AND code IN ('PARSER_FAILURE','HTTP_ERROR','TIMEOUT','NETWORK_ERROR','RATE_LIMITED','AUTH_MISSING')")
-    .all(source, endpoint);
+    .prepare(`SELECT event_id FROM data_quality_events WHERE resolved_at IS NULL AND source IS ? AND endpoint IS ? AND code IN (${codes.map(() => "?").join(",")})`)
+    .all(source, endpoint, ...codes);
   for (const e of open) resolveQualityEvent(db, e.event_id, `recovered: successful request and parse at ${nowIso}`, nowIso);
   return open.length;
 }
@@ -42,20 +46,32 @@ function dayBounds(dayIso) {
 }
 
 // plan: { [source]: { demanded_per_day, capacity_per_day } } from the scheduler.
-export function coverageForDay(db, dayIso, plan) {
+// Only the time the app was actually collecting counts: a day that ended before the first
+// request for a source is NOT_RUNNING (null, never 0%), the first day is prorated from the first
+// request, and `nowMs` (today so far) caps the window at the current time.
+export function coverageForDay(db, dayIso, plan, { nowMs = null } = {}) {
   const [from, to] = dayBounds(dayIso);
   const out = {};
   for (const [source, p] of Object.entries(plan)) {
+    const first = db.prepare("SELECT min(requested_at) AS t FROM source_requests WHERE source = ? AND synthetic = 0").get(source).t;
+    const windowStart = Math.max(Date.parse(from), first ? Date.parse(first) : Infinity);
+    const windowEnd = Math.min(Date.parse(to), nowMs ?? Infinity);
+    const base = { day: dayIso, basis: "OK non-synthetic requests / min(configured demand, rate-limit capacity), over the time the app was collecting" };
+    if (!(windowEnd > windowStart)) {
+      out[source] = { ...base, actual: 0, expected: 0, coverage_pct_x100: null, state: "NOT_RUNNING", reason: first ? "the app was not collecting yet" : "no real (non-synthetic) request to this source yet" };
+      continue;
+    }
     const actual = db
       .prepare("SELECT count(*) AS n FROM source_requests WHERE source = ? AND outcome = 'OK' AND synthetic = 0 AND requested_at >= ? AND requested_at < ?")
       .get(source, from, to).n;
-    const expected = Math.min(p.demanded_per_day, p.capacity_per_day);
+    const fraction = (windowEnd - windowStart) / 86400000;
+    const expected = Math.max(1, Math.floor(Math.min(p.demanded_per_day, p.capacity_per_day) * fraction));
     out[source] = {
-      day: dayIso,
+      ...base,
       actual,
       expected,
-      coverage_pct_x100: expected > 0 ? Math.min(10000, Math.floor((actual * 10000) / expected)) : null,
-      basis: "OK non-synthetic requests / min(configured demand, rate-limit capacity)",
+      coverage_pct_x100: Math.min(10000, Math.floor((actual * 10000) / expected)),
+      state: fraction < 1 ? "PARTIAL_DAY" : "MEASURED",
     };
   }
   return out;

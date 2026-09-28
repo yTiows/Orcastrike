@@ -5,6 +5,7 @@
 import { getSettings, itemByName, latestObservation, openQualityEvents, putSettings } from "./db.js";
 import { coverageForDay, lastCompleteDays } from "./quality.js";
 import { capacityPlan, planJobs, trackedItems } from "./scheduler.js";
+import { DIAGNOSTICS_CONTRACT, runDiagnostics } from "./diagnostics.js";
 import { HttpError } from "./server.js";
 import { normalizeWatchlist } from "../js/state.js";
 import { SCHEMA, validateResearchSettings } from "../config/settings-schema.js";
@@ -31,15 +32,43 @@ function item(query) {
   return raw.trim();
 }
 
+// The collector's last request for this source/endpoint (and item), in words: the reason a
+// value is missing is always the upstream's actual answer, never a guess.
+function lastRequestText(db, source, endpoint, name = null) {
+  const r = db
+    .prepare("SELECT outcome, http_status, error, requested_at FROM source_requests WHERE source = ? AND endpoint = ? AND request_params_json = ? ORDER BY requested_at DESC LIMIT 1")
+    .get(source, endpoint, JSON.stringify(name ? { item: name } : {}));
+  if (!r) return `the collector has not sent ${endpoint} yet`;
+  return `last ${endpoint} request at ${r.requested_at}: ${r.outcome}${r.http_status ? ` (HTTP ${r.http_status})` : ""}${r.error ? `: ${r.error}` : ""}`;
+}
+
+// No items row yet: either the item really isn't on the watchlist, or it is and nothing has
+// been stored for it so far (rows are created with the first observation).
+function untrackedOrPending(db, name, source) {
+  if (!trackedItems(db, getSettings(db)).has(name)) return "item is not on the app's watchlist (add it in Markets → Watchlist)";
+  const endpoint = source === "steam" ? "steam_listing_page" : source === "skinport" ? "skinport_items" : `${source}_listings`;
+  return `on the watchlist; nothing stored for it yet; ${lastRequestText(db, source, endpoint, source === "skinport" ? null : name)}`;
+}
+
+function missingQuoteReason(db, source, name, row) {
+  if (source === "steam") {
+    return row.steam_item_nameid
+      ? `no observation yet; ${lastRequestText(db, "steam", "steam_histogram", name)}`
+      : `Steam prices need the item's id from its Steam listing page, which hasn't been read yet; ${lastRequestText(db, "steam", "steam_listing_page", name)}`;
+  }
+  if (source === "skinport") return `no observation yet; ${lastRequestText(db, "skinport", "skinport_items")}`;
+  return `no observation yet; ${lastRequestText(db, source, `${source}_listings`, name)}`;
+}
+
 export function v1Quote(ctx, source, name) {
   const { db, env } = ctx;
   const nowIso = new Date().toISOString();
   const base = { source, canonical_item_id: name, price_usd_cents: null, listing_depth: null, captured_at: nowIso, expires_at: nowIso };
   if (source === "csfloat" && !(env.CSFLOAT_API_KEY ?? "").trim()) return { ...base, state: "NOT_CONFIGURED", reason: "CSFLOAT_API_KEY is not set on the daemon" };
   const row = itemByName(db, name);
-  if (!row) return { ...base, state: "UNAVAILABLE", reason: "item is not tracked by the daemon (add it to the watchlist)" };
+  if (!row) return { ...base, state: "UNAVAILABLE", reason: untrackedOrPending(db, name, source) };
   const q = latestObservation(db, row.item_id, source, "quote");
-  if (!q) return { ...base, state: "UNAVAILABLE", reason: "no observation yet" };
+  if (!q) return { ...base, state: "UNAVAILABLE", reason: missingQuoteReason(db, source, name, row) };
   const depth = latestObservation(db, row.item_id, source, "depth");
   const sameReq = depth && depth.request_id === q.request_id ? depth : null;
   const state = q.quality_state === "INVALID" ? "INVALID" : q.quality_state === "STALE" ? "STALE" : q.quality_state === "INSUFFICIENT" ? "UNAVAILABLE" : "AVAILABLE";
@@ -69,6 +98,11 @@ export function v1Quote(ctx, source, name) {
     });
   }
   return out;
+}
+
+function diagnosticsState(ctx) {
+  const d = ctx.diagnostics ?? { running: false, report: null, error: null };
+  return { contract: DIAGNOSTICS_CONTRACT, running: d.running, error: d.error, report: d.report };
 }
 
 // Cheap activity summary for the UI's status and "collecting data" progress. Reads recent rows
@@ -135,6 +169,30 @@ export function coreRoutes(ctx) {
     },
     {
       method: "GET",
+      path: "/api/v2/diagnostics",
+      handler: () => diagnosticsState(ctx),
+    },
+    {
+      // One real request per source, through the collector's own client, rate limits and
+      // parsers. Runs in the background; the UI polls GET.
+      method: "POST",
+      path: "/api/v2/diagnostics",
+      handler: ({ body }) => {
+        if (body?.confirm !== true) throw new HttpError(422, "explicit confirmation required");
+        const d = (ctx.diagnostics ??= { running: false, report: null, error: null });
+        if (!d.running) {
+          d.running = true;
+          d.error = null;
+          runDiagnostics({ db, client: ctx.client, cfg: ctx.getCfg(), env: ctx.env, tracked: trackedItems(db, getSettings(db)), scheduler: ctx.scheduler })
+            .then((r) => (d.report = r))
+            .catch((err) => (d.error = String(err?.message ?? err)))
+            .finally(() => (d.running = false));
+        }
+        return diagnosticsState(ctx);
+      },
+    },
+    {
+      method: "GET",
       path: "/api/v2/health",
       handler: () => ({
         contract: API_VERSION,
@@ -181,7 +239,7 @@ export function coreRoutes(ctx) {
         const row = itemByName(db, name);
         const h = row ? latestObservation(db, row.item_id, "steam", "history") : null;
         const base = { source: "steam", canonical_item_id: name, currency: "USD" };
-        if (!h) return { ...base, points: [], captured_at: new Date().toISOString(), expires_at: new Date().toISOString(), state: "UNAVAILABLE", reason: row ? "no history observation yet" : "item not tracked" };
+        if (!h) return { ...base, points: [], captured_at: new Date().toISOString(), expires_at: new Date().toISOString(), state: "UNAVAILABLE", reason: row ? `no history observation yet; ${lastRequestText(db, "steam", "steam_listing_page", name)}` : untrackedOrPending(db, name, "steam") };
         const n = JSON.parse(h.normalized_json);
         return {
           ...base,
@@ -221,7 +279,13 @@ export function coreRoutes(ctx) {
         const cfg = ctx.getCfg();
         const jobs = planJobs({ db, cfg, env: ctx.env, tracked: trackedItems(db, getSettings(db)), nowMs: Date.now() });
         const plan = capacityPlan(jobs, cfg);
-        return { contract: "coverage_report@1", plan, days: lastCompleteDays(Date.now(), days).map((d) => coverageForDay(db, d, plan)) };
+        const nowMs = Date.now();
+        return {
+          contract: "coverage_report@1",
+          plan,
+          days: lastCompleteDays(nowMs, days).map((d) => coverageForDay(db, d, plan)),
+          today: coverageForDay(db, new Date(nowMs).toISOString().slice(0, 10), plan, { nowMs }),
+        };
       },
     },
     {

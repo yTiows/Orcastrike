@@ -23,6 +23,7 @@ const ENV = [
   ["ORCASTRIKE_SYNTHETIC", "test only", "daemon env", "unset", "`1` flags every stored row SYNTHETIC; required for the upstream override."],
   ["ORCASTRIKE_UPSTREAM_OVERRIDE", "test only", "daemon env", "unset", "Loopback host only, and only with ORCASTRIKE_SYNTHETIC=1; anything else refuses to start."],
   ["ORCASTRIKE_ROOT", "test only", "launcher env", "unset", "Points scripts/orca.mjs at a scratch checkout (tests/orca.test.js)."],
+  ["ORCASTRIKE_DOCTOR_OFFLINE", "test only", "launcher env", "unset", "`1` makes `doctor` skip its live requests (same as `--offline`)."],
   ["ORCASTRIKE_SCAN_NO_GIT", "test only", "secret-scan env", "unset", "`1` scans the working tree as if there were no git checkout (ZIP download)."],
   ["ALLOWED_ORIGINS", "developer_default", "wrangler.toml [vars]", "Pages origin + localhost:8788", "Worker CORS allow-list."],
   ["NTFY_TOPIC", "not implemented", "—", "—", "Push notifications are BLOCKED (Phase 0 unverified); nothing reads this."],

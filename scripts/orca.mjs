@@ -6,7 +6,7 @@
 //   node scripts/orca.mjs stop    [--port N]
 //   node scripts/orca.mjs setup   [--quick]
 //   node scripts/orca.mjs update  [--skip-install] [--skip-tests] [--convert] [--branch B] [--remote URL]
-//   node scripts/orca.mjs doctor  [--json]
+//   node scripts/orca.mjs doctor  [--json] [--offline]
 //
 // Wrappers: Orcastrike.cmd (Windows, double-click = start), orcastrike.sh, npm start / npm run …
 // It never reads, stores or prints secrets: CSFLOAT_API_KEY is reported only as set / not set.
@@ -52,6 +52,7 @@ export function parseArgs(argv) {
     else if (a === "--no-update-check") out.updateCheck = false;
     else if (a === "--quick") out.quick = true;
     else if (a === "--json") out.json = true;
+    else if (a === "--offline") out.offline = true;
     else if (a === "--convert") out.convert = true;
     else if (a === "--skip-install") out.skipInstall = true;
     else if (a === "--skip-tests") out.skipTests = true;
@@ -232,7 +233,41 @@ function installDevTools({ force = false } = {}) {
 
 // ---- commands ------------------------------------------------------------------------------
 
-export async function doctor({ json = false } = {}) {
+// One real request per source (daemon/diagnostics.js). Through the running app when there is
+// one (its rate limits and database), otherwise in-process against a throwaway in-memory
+// database, so the doctor never migrates or writes your data directory.
+async function liveProbes(port, running) {
+  if (running) {
+    const origin = `http://127.0.0.1:${port}`;
+    const post = await fetch(`${origin}/api/v2/diagnostics`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify({ confirm: true }), signal: AbortSignal.timeout(5000) }).catch(() => null);
+    if (!post?.ok) return { error: `the running app refused the diagnostics request (HTTP ${post?.status ?? "no answer"})` };
+    const end = Date.now() + 90000;
+    while (Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const st = await (await fetch(`${origin}/api/v2/diagnostics`, { signal: AbortSignal.timeout(5000) }).catch(() => null))?.json().catch(() => null);
+      if (st && !st.running) return st.error ? { error: st.error } : { report: st.report, via: "the running app" };
+    }
+    return { error: "diagnostics did not finish within 90 s" };
+  }
+  const mod = (p) => import(new URL(p, import.meta.url).href);
+  const [{ openDb }, { UpstreamClient }, { runDiagnostics }, { RESEARCH_DEFAULTS }] = await Promise.all([mod("../daemon/db.js"), mod("../daemon/http-client.js"), mod("../daemon/diagnostics.js"), mod("../config/settings-schema.js")]);
+  const starter = JSON.parse(readFileSync(new URL("../static/watchlist-starter.json", import.meta.url), "utf8")).items;
+  const report = await runDiagnostics({ db: openDb(":memory:"), client: new UpstreamClient({ rateLimits: RESEARCH_DEFAULTS.ratelimit, env: process.env }), cfg: RESEARCH_DEFAULTS, env: process.env, tracked: new Set(starter.slice(0, 1)) });
+  return { report, via: "a one-off request from this command (app not running)" };
+}
+
+export function probeLine(p) {
+  const status = p.outcome === "NOT_CONFIGURED" || p.outcome === "SKIPPED" ? "INFO" : p.written && /usable \(/.test(p.reason) && !/none usable/.test(p.reason) ? "OK" : "WARN";
+  const parts = [];
+  if (p.http_status !== null && p.http_status !== undefined) parts.push(`HTTP ${p.http_status}`);
+  for (const r of p.redirects ?? []) parts.push(`→ ${r.location ?? "(no Location)"}${r.followed ? " (followed)" : ` (not followed: ${r.why})`}`);
+  if (Number.isFinite(p.elapsed_ms)) parts.push(`${p.elapsed_ms} ms`);
+  if (p.parser) parts.push(`parser ${p.parser.version}: ${Object.entries(p.parser.records).map(([k, n]) => `${n} ${k}`).join(", ") || "no records"}`);
+  parts.push(p.reason);
+  return { status, check: `Live: ${p.label}`, detail: `${p.item ? `[${p.item}] ` : ""}${parts.join(" · ")}` };
+}
+
+export async function doctor({ json = false, offline = false } = {}) {
   const rows = [];
   const add = (status, check, detail) => rows.push({ status, check, detail });
   add(versionAtLeast(process.versions.node) ? "OK" : "FAIL", "Node.js", `${process.versions.node} (needs ≥ ${MIN_NODE.join(".")})`);
@@ -273,6 +308,18 @@ export async function doctor({ json = false } = {}) {
   add((process.env.CSFLOAT_API_KEY ?? "").trim() ? "OK" : "INFO", "CSFLOAT_API_KEY", (process.env.CSFLOAT_API_KEY ?? "").trim() ? "set (value not shown)" : "not set: CSFloat reports NOT_CONFIGURED (optional; SETUP.md step 4)");
   const c = contractSummary();
   add(c?.verified ? "OK" : "WARN", "Live data contract", c ? `last run ${c.run_at}: ${Object.entries(c.counts).map(([k, v]) => `${v} ${k}`).join(", ")}${c.verified ? "" : ". No parser is VERIFIED yet, so no opportunity can be ELIGIBLE. The app re-checks by itself daily (or: Overview → Verify now)"}` : "not run yet: the app runs it by itself a few seconds after it starts");
+  if (offline || process.env.ORCASTRIKE_DOCTOR_OFFLINE === "1") add("INFO", "Live data sources", "not checked (--offline)");
+  else {
+    const live = await liveProbes(port, Boolean(h)).catch((err) => ({ error: err?.message ?? String(err) }));
+    if (live.error) add("WARN", "Live data sources", `could not run: ${live.error}`);
+    else {
+      add("INFO", "Live data sources", `one real request per source, via ${live.via}${live.report.synthetic ? " (SYNTHETIC upstream: not evidence)" : ""}`);
+      for (const p of live.report.probes) {
+        const r = probeLine(p);
+        add(r.status, r.check, r.detail);
+      }
+    }
+  }
   if (json) say(JSON.stringify(rows, null, 2));
   else {
     say("Orcastrike doctor\n");
@@ -514,7 +561,7 @@ function help() {
   setup   Check prerequisites, install dev tools if needed, run the tests   [--quick: skip tests]
   update  Fetch and apply the latest version (fast-forward only, database backed up first)
             --skip-install  --skip-tests  --convert (ZIP folder → git)  --branch B  --remote URL
-  doctor  Diagnose the installation   [--json]
+  doctor  Diagnose the installation, and send one real request per data source   [--json] [--offline]
 
   Windows: Orcastrike.cmd [command]   macOS/Linux: ./orcastrike.sh [command]   npm: npm start | npm run <command>`);
 }

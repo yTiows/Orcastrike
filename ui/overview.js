@@ -5,7 +5,7 @@
 import { escapeHtml, formatBpsPct, formatCents } from "../js/format.js";
 import { rateToBps } from "../js/money.js";
 import { stopLossFlag } from "../js/tiers.js";
-import { ago, bindCopy, blockedSummary, cents, chip, code, copyButton, FIGURE_LABEL, market, meter, oppStatus, sourceState, stat, tag } from "./components.js";
+import { ago, bindCopy, blockedSummary, cents, chip, code, copyButton, FIGURE_LABEL, market, meter, oppStatus, sourceState, stat, tag, timeUtc } from "./components.js";
 
 let els = {};
 
@@ -23,6 +23,11 @@ export function mount(root, app) {
         <div id="ov-opps"></div>
       </section>
     </div>
+    <section class="card" id="ov-diag-card">
+      <div class="card-head"><h3>Data sources <span class="muted small">diagnostics</span></h3><button type="button" class="small" data-act="diagnose" id="ov-diag-run">Run diagnostics</button></div>
+      <p class="hint">Sends one real request to each source through the app's own collector and rate limits, and shows exactly what came back and whether anything was stored.</p>
+      <div id="ov-diag"></div>
+    </section>
     <div class="grid-2">
       <section class="card">
         <div class="card-head"><h3>Your money</h3><a href="#portfolio" class="small">Portfolio →</a></div>
@@ -37,7 +42,7 @@ export function mount(root, app) {
       <div class="card-head"><h3>Evidence progress</h3><span class="muted small">A strategy is promoted only when every bar is full.</span></div>
       <div class="grid-2" id="ov-evidence"></div>
     </section>`;
-  els = Object.fromEntries(["alerts", "hero", "steps", "steps-count", "opps", "money", "evidence"].map((k) => [k, root.querySelector(`#ov-${k}`)]));
+  els = Object.fromEntries(["alerts", "hero", "steps", "steps-count", "opps", "money", "evidence", "diag", "diag-run", "diag-card"].map((k) => [k, root.querySelector(`#ov-${k}`)]));
   els.figures = root.querySelector("#dash-figures");
   bindCopy(root);
   root.addEventListener("click", async (e) => {
@@ -47,6 +52,9 @@ export function mount(root, app) {
     if (act === "verify") {
       b.disabled = true;
       await app.actions.verifyNow();
+    } else if (act === "diagnose") {
+      b.disabled = true;
+      await app.actions.runDiagnostics();
     } else if (act === "add-cash") app.actions.navigate("portfolio", { form: "cash" });
     else if (act === "backup-dir") app.actions.chooseBackupDir();
     else if (act === "export") app.actions.exportLedger();
@@ -157,7 +165,12 @@ function stepsHtml(app) {
     );
   }
   const hasCash = (app.ledger?.adjustments ?? []).some((a) => a.kind === "cash");
-  out.push(step(hasCash ? "done" : "todo", hasCash ? "Starting cash recorded" : "Record your starting cash", hasCash ? "Position sizes and tiers use it." : "Sizing and tiers need to know what you can spend. Takes 10 seconds.", hasCash ? "" : `<button type="button" class="small primary" data-act="add-cash">Add cash</button>`));
+  // Without cash every pair is BLOCKED_BY_TIER (tier "None"), so this is the first thing to do.
+  const cashStep = hasCash
+    ? step("done", "Starting cash recorded", "Position sizes and tiers use it.")
+    : step("attn", "Add your starting cash", `Until you do, every pair is ${code("BLOCKED_BY_TIER")}: tiers and position sizes are worked out from the cash you have. Takes 10 seconds.`, `<button type="button" class="small primary" data-act="add-cash">Add cash</button>`);
+  if (hasCash) out.push(cashStep);
+  else out.splice(app.daemon.available ? 0 : 1, 0, cashStep);
   const b = app.backup.state?.state;
   const fsa = app.actions.fsaSupported();
   const backedUp = ["CHOSEN", "WRITTEN", "SKIPPED_TODAY"].includes(b);
@@ -300,4 +313,32 @@ export function update(app, d) {
   els.money.innerHTML = moneyHtml(app, d);
   renderFigures(d.figures);
   els.evidence.innerHTML = evidenceHtml(app);
+  els["diag-card"].hidden = !app.daemon.available;
+  els["diag-run"].disabled = app.diagnostics.running;
+  els["diag-run"].textContent = app.diagnostics.running ? "Running…" : "Run diagnostics";
+  els.diag.innerHTML = diagnosticsHtml(app.diagnostics);
+}
+
+const PROBE_TONE = { OK: "ok", NOT_CONFIGURED: "info", SKIPPED: "", DEFERRED: "warn", BLOCKED: "warn" };
+
+function diagnosticsHtml(d) {
+  if (d.error) return `<p class="error-text">Diagnostics failed: ${escapeHtml(d.error)}</p>`;
+  if (!d.report) return d.running ? `<p class="muted">Sending one request per source…</p>` : `<p class="muted">Not run yet.</p>`;
+  const r = d.report;
+  const rows = r.probes
+    .map((p) => {
+      const request = [
+        p.http_status !== null && p.http_status !== undefined ? `HTTP ${p.http_status}` : "",
+        ...(p.redirects ?? []).map((x) => `→ <span class="code">${escapeHtml(x.location ?? "(no Location)")}</span> ${x.followed ? "(followed)" : `(not followed: ${escapeHtml(x.why)})`}`),
+        Number.isFinite(p.elapsed_ms) ? `${p.elapsed_ms} ms` : "",
+      ].filter(Boolean).join("<br>");
+      const parser = p.parser ? `${code(p.parser.version)}<div class="small muted">${escapeHtml(Object.entries(p.parser.records).map(([k, n]) => `${n} ${k}`).join(", ") || "no records")}</div>` : `<span class="muted">not run</span>`;
+      return `<tr><td><strong>${escapeHtml(p.label)}</strong>${p.item ? `<div class="small muted">${escapeHtml(p.item)}</div>` : ""}</td>
+        <td>${chip(p.outcome, PROBE_TONE[p.outcome] ?? "bad")}<div class="small">${request || '<span class="muted">no request sent</span>'}</div></td>
+        <td>${parser}</td>
+        <td>${chip(p.written ? "written" : "not written", p.written ? "ok" : "warn")}<div class="small">${escapeHtml(p.reason)}</div></td></tr>`;
+    })
+    .join("");
+  return `<div class="table-wrap"><table class="compact"><thead><tr><th>Source</th><th>Request</th><th>Parser</th><th>Stored?</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="small muted">Run ${escapeHtml(timeUtc(r.started_at))} UTC${r.synthetic ? " · SYNTHETIC upstream (test data, not evidence)" : ""}. These are the upstream's actual answers; nothing is simulated or retried around a block.</p>`;
 }

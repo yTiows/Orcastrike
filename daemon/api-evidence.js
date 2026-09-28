@@ -97,7 +97,7 @@ export function estimateExits(ctx, lots) {
   const floors = cfg.stop.floor_cents_by_item ?? {};
   return lots.map((lot) => {
     const row = itemByName(db, lot.canonical_item_id);
-    if (!row) return { lot_id: lot.lot_id, state: "UNKNOWN", reason: "item not tracked by the daemon" };
+    if (!row) return { lot_id: lot.lot_id, state: "UNKNOWN", reason: trackedItems(db, getSettings(db)).has(lot.canonical_item_id) ? "on the watchlist, but no price stored for it yet" : "not on the app's watchlist, so it has no prices (add it in Markets → Watchlist)" };
     const options = [];
     const reasons = [];
     for (const market of ["csfloat", "skinport"]) {

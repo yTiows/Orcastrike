@@ -295,6 +295,11 @@ CREATE TABLE fee_calibration_proposals (
 );
 `,
   },
+  {
+    version: 2,
+    description: "index for the engine's last-opportunity lookup per item/pair/strategy (was a full-table scan per evaluation)",
+    sql: "CREATE INDEX IF NOT EXISTS opportunities_pair ON opportunities (item_id, buy_source, sell_source, strategy_version, opportunity_id);",
+  },
 ]);
 
 export function openDb(path) {

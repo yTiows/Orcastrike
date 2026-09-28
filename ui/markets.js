@@ -28,6 +28,7 @@ export function mount(root, app) {
         <tbody id="scan-body"></tbody>
       </table></div>
       <div id="scan-empty"></div>
+      <details class="inline" id="scan-progress"><summary>Price refresh details <span id="scan-progress-sum" class="muted"></span></summary><div id="scan-progress-body"></div></details>
       <details class="inline"><summary>Watchlist (<span id="wl-count"></span>)</summary>
         <p class="hint">Exact market names: name + wear + StatTrak™/Souvenir. Float, pattern and sticker premiums aren't visible to the app.</p>
         <form id="wl-add" class="inline-form">
@@ -58,6 +59,8 @@ export function mount(root, app) {
     root,
     body: root.querySelector("#scan-body"),
     table: root.querySelector("#scan-table"),
+    progressSum: root.querySelector("#scan-progress-sum"),
+    progressBody: root.querySelector("#scan-progress-body"),
     empty: root.querySelector("#scan-empty"),
     summary: root.querySelector("#scan-summary"),
     refresh: root.querySelector("#scan-refresh"),
@@ -219,18 +222,35 @@ export function renderPriceChart(container, points, title) {
   return undefined;
 }
 
+// Every item × source of the last refresh: failed first with the backend's exact reason.
+function renderProgress(app) {
+  const items = [...app.progress.items.values()];
+  const n = (st) => items.filter((i) => i.state === st).length;
+  els.progressSum.textContent = items.length ? `(${n("ok")} ok, ${n("failed")} unavailable, ${n("pending")} pending)` : "(no refresh yet)";
+  const order = { failed: 0, pending: 1, ok: 2 };
+  els.progressBody.innerHTML = items.length
+    ? `<div class="table-wrap"><table class="compact"><thead><tr><th>Item</th><th>Market</th><th>Result</th><th>Reason</th></tr></thead><tbody>${items
+        .sort((a, b) => order[a.state] - order[b.state] || a.item.localeCompare(b.item))
+        .map((i) => `<tr><td>${escapeHtml(i.item)}</td><td>${market(i.source)}</td><td>${i.state === "pending" ? chip("waiting", "") : i.state === "ok" ? chip(i.status, "ok") : chip(i.status ?? "failed", "warn")}${i.ms !== null ? ` <span class="small muted">${i.ms} ms</span>` : ""}</td><td class="small">${escapeHtml(i.reason ?? "")}</td></tr>`)
+        .join("")}</tbody></table></div>`
+    : "";
+}
+
 export function update(app, d) {
   const res = d.scanResult;
   const found = res.rows.filter((r) => r.eligibility_status === ELIGIBILITY.HIGHLIGHTED);
   const rows = ui.showAll ? [...res.rows, ...res.below_threshold] : found;
   const noQuotes = app.quotes.size === 0;
+  const p = app.progress;
+  const waitedS = p.started_at ? Math.floor((Date.now() - p.started_at) / 1000) : 0;
   els.summary.textContent = !app.client.configured
     ? "No price source: start the app, or set a Worker URL in Settings."
     : app.refreshing
-      ? `Updating prices ${app.progress.done}/${app.progress.total}…`
+      ? `Updating prices ${p.done}/${p.total}${p.failed ? ` · ${p.failed} failed` : ""}${p.done === 0 && waitedS >= 3 ? ` · waiting for ${app.client.local ? "the app" : "the Worker"} to answer (${waitedS}s)` : ""}…`
       : app.lastRefreshIso
-        ? `${res.evaluated} pairs · updated ${ago(app.lastRefreshIso, d.nowMs)}`
+        ? `${res.evaluated} pairs · updated ${ago(app.lastRefreshIso, d.nowMs)}${p.failed ? ` · ${p.failed} of ${p.total} prices unavailable (see details)` : ""}`
         : "Fetching prices…";
+  renderProgress(app);
   els.refresh.disabled = app.refreshing || !app.client.configured;
   els.body.innerHTML = rows.map((r) => rowHtml(app, r)).join("");
   els.table.hidden = !rows.length;

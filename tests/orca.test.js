@@ -202,9 +202,11 @@ test("update --convert: a ZIP-style folder becomes a git checkout; data kept, di
 });
 
 test("doctor reports every check as data, never a secret value", () => {
-  const r = orca(["doctor", "--json"], { CSFLOAT_API_KEY: "TEST_ONLY_doctor_key_123456", ORCASTRIKE_DATA_DIR: mkdtempSync(join(tmpdir(), "orca-doc-")), ORCASTRIKE_PORT: "1" });
+  // --offline: the test key must never reach a marketplace, and tests make no live requests.
+  const r = orca(["doctor", "--json", "--offline"], { CSFLOAT_API_KEY: "TEST_ONLY_doctor_key_123456", ORCASTRIKE_DATA_DIR: mkdtempSync(join(tmpdir(), "orca-doc-")), ORCASTRIKE_PORT: "1" });
   const rows = JSON.parse(r.stdout.slice(r.stdout.indexOf("[")));
   const by = Object.fromEntries(rows.map((x) => [x.check, x]));
+  assert.equal(by["Live data sources"].detail, "not checked (--offline)");
   assert.equal(by["Node.js"].status, "OK");
   assert.equal(by["Built-in SQLite"].status, "OK");
   assert.equal(by.CSFLOAT_API_KEY.detail, "set (value not shown)");

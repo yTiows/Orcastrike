@@ -236,6 +236,7 @@ Start with **`.\Orcastrike.cmd doctor`** (or `npm run doctor`). It checks, and p
 - the port, and whether the app is running
 - whether the CSFloat key is set (never its value)
 - the live-contract status
+- one real request per data source (FX, Skinport, Steam, CSFloat): HTTP status, redirect target, time, parser result, and whether anything was stored. Through the running app if it's up; `--offline` skips it.
 
 | Symptom | Fix |
 |---|---|
@@ -243,6 +244,9 @@ Start with **`.\Orcastrike.cmd doctor`** (or `npm run doctor`). It checks, and p
 | "Node … is too old" | Install the current LTS: `winget install OpenJS.NodeJS.LTS`. |
 | "Port 8790 is used by another program" | `.\Orcastrike.cmd start --port 8791`, then use the printed URL. |
 | The browser didn't open | Open <http://127.0.0.1:8790/> yourself. |
+| "Refreshing 0 of 54" never moves, price history stays on "Loading…", coverage 0.0% everywhere | Fixed in 2.2.1: with UMBRA on, the engine blocked the app. Update (`.\Orcastrike.cmd update`). Then Overview → Data sources → **Run diagnostics** shows, per source, what the upstream answered and whether it was stored. Markets → Price refresh details lists every item's result and reason. |
+| Steam listing page "HTTP 302" / `STEAM_REDIRECT` | Steam redirected the page. Diagnostics (or `doctor`) shows the exact target. A sign-in or consent page is never followed and never worked around; the app retries with growing gaps. Steam price overview data keeps working; Steam order-book prices and history need the listing page. Try again later or from another network. |
+| `AUTH_MISSING` for CSFloat | No CSFloat key is set (optional, step 4). CSFloat is then `NOT_CONFIGURED`; nothing is requested from it. |
 | Everything is INSUFFICIENT, no opportunities | Expected until the data sources are verified (automatic, step 5) and the app has collected days of data. Overview says which; each row's blocked reason says exactly why. |
 | Overview shows a source as "unreachable" or "format changed" | Unreachable: this network blocks it; try another network, then **Verify now**. Format changed: the upstream changed its response; update the app (step 7). |
 | CSFloat says NOT_CONFIGURED after setting the key | Open a new window (environment variables apply to new processes), then `doctor`. |

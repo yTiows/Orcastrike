@@ -15,6 +15,61 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 | RECOVERY | Automatic. The next successful job resolves the open quality event (`resolveOnRecovery`). |
 | TEST | `upstream errors never echo upstream body or auth material` (worker); `pipeline: network down, timeout, missing key and 401 each store no observation and record why` (daemon) |
 
+## Redirect (for example Steam's listing page answering HTTP 302)
+
+| | |
+|---|---|
+| INPUT | A 3xx answer to a scheduled job or a diagnostics probe |
+| PROCESSING | `UpstreamClient.get` (`redirect: "manual"`) → `redirectDecision`: the `Location` target is logged; it is followed (at most 2 hops, each costing its own rate-limit token) only when it stays on the same host over https and is not a sign-in, age-check or consent page. A followed redirect that lands on a different page than the one requested is not parsed as that item. |
+| OUTPUT | Job outcome `REDIRECT`, quality event `STEAM_REDIRECT` (Steam) or `HTTP_REDIRECT` (others) naming the target. The request log keeps `outcome = HTTP_ERROR` with the 3xx status and the target in `error` (its outcome set is part of the append-only audit schema). No observation. Quotes and history for that item say which request failed and why. |
+| FAILURE | A Steam listing page that can't be read leaves the item without `item_nameid`, so Steam order-book quotes and price history stay `UNAVAILABLE` with that reason. There are no workarounds: no cookies, sessions, proxies or spoofed clients. |
+| RECOVERY | Automatic when the page answers 200 again (the event resolves). Retries back off exponentially per item (1, 1, 2, 4, 8 … minutes, capped at the job's interval) so a redirecting page can't consume Steam's request budget. Overview → Data sources → Run diagnostics (or `doctor`) shows the exact target. |
+| TEST | `redirects: only same-host pages that are not sign-in, age-check or consent pages are followed`; `regression: a Steam 302 to a sign-in page is not followed; STEAM_REDIRECT names the target; nothing stored`; `a same-host redirect is followed once (each hop costs a token); landing on another page stores nothing`; `a redirect to the same listing (canonical path) is followed and parsed`; `regression: a failing urgent job backs off exponentially instead of retrying every minute` |
+
+## App unresponsive while the engine computes (large UMBRA universe)
+
+| | |
+|---|---|
+| INPUT | UMBRA on: thousands of universe items × 4 routes per engine cycle |
+| PROCESSING | `Engine.cycleAsync`: the cycle runs in ~25 ms slices, each in one transaction, yielding to the event loop between slices; a cycle never overlaps a running one; the last-opportunity lookup uses the `opportunities_pair` index (migration 2). |
+| OUTPUT | HTTP (quotes, history, health) and the sampling scheduler keep running during a cycle. |
+| FAILURE | Before 2.2.1 a 5,000-item universe blocked the process for 70–90 s per cycle, every 30 s: "Refreshing 0 of N", history stuck on "Loading…", and no new observations, while the app still showed as online. |
+| RECOVERY | Update to 2.2.1 or later. Turning UMBRA off also removes the load. |
+| TEST | `regression: a UMBRA-sized engine cycle yields to the event loop and uses the pair index` |
+
+## Skinport without an exchange rate
+
+| | |
+|---|---|
+| INPUT | Skinport job due while there is no usable EUR→USD observation (first start, FX failing) |
+| PROCESSING | `planJobs` marks Skinport jobs `blocked` until FX is usable, so no Skinport token is spent on a response that can't be stored |
+| OUTPUT | No Skinport request; diagnostics says "waiting for a usable EUR→USD rate". If a Skinport run ever happens without a rate, quotes are stored `INSUFFICIENT` with that reason and `FX_UNAVAILABLE` is recorded. |
+| FAILURE | Skinport prices are never stored in EUR or converted with an old rate. |
+| RECOVERY | Automatic: the first successful FX job unblocks Skinport, and the next Skinport run with a rate resolves `FX_UNAVAILABLE`. |
+| TEST | `regression: Skinport waits for a usable FX rate, then stores USD quotes; FX_UNAVAILABLE resolves` |
+
+## Days the app wasn't running (coverage)
+
+| | |
+|---|---|
+| INPUT | Coverage for days before the first real request, the first partial day, and today |
+| PROCESSING | `coverageForDay` measures only the time the app was collecting: before the first non-synthetic request → `NOT_RUNNING` (null); the first day and "today so far" are prorated |
+| OUTPUT | "not running" in the coverage table, never 0.0%; a "Today so far" row |
+| FAILURE | SIGNAL_EVIDENCE still counts NOT_RUNNING days as failing ("no data"): evidence is never inferred for time without observations. |
+| RECOVERY | Keep the app running; complete days fill in. |
+| TEST | `regression: coverage never shows 0% for days the app wasn't running; the first day and today are prorated` |
+
+## Finding out why data doesn't arrive
+
+| | |
+|---|---|
+| INPUT | Overview → Data sources → **Run diagnostics**, POST `/api/v2/diagnostics`, or `doctor` |
+| PROCESSING | `runDiagnostics`: one real request per source (FX, Skinport, Steam listing page, Steam price overview, CSFloat) through the collector's own client, rate limits and parsers. It waits for the host's budget and is never forced past it. `doctor` uses the running app, or else a one-off in-memory database (it never writes your data directory). `--offline` skips it (tests and CI). |
+| OUTPUT | Per source: HTTP status, redirect target, elapsed time, parser result (records by kind and quality), and whether anything was written and why not. CSFloat without a key: "no request sent". |
+| FAILURE | Diagnostics shows upstream answers as they are; it never retries around a block or fills in a value. |
+| RECOVERY | Act on the stated reason (key, network, redirect target, rate limit). |
+| TEST | `diagnostics: one real request per source, reporting status, redirect target, elapsed time, parser result and the write verdict`; `regression: a watchlist item with no data yet is not called untracked; missing prices state the collector's last answer` |
+
 ## Format change (fields renamed, types changed, envelope changed)
 
 | | |
@@ -64,7 +119,7 @@ Each entry lists INPUT → PROCESSING → OUTPUT, the FAILURE behaviour, RECOVER
 | | |
 |---|---|
 | INPUT | 429 from upstream, or an empty local token bucket |
-| PROCESSING | Per-host `TokenBucket` with capacities below documented or observed limits (CONFIGURATION.md `ratelimit.*`); a 429 sets exponential host backoff |
+| PROCESSING | Per-host `TokenBucket` with capacities below documented or observed limits (CONFIGURATION.md `ratelimit.*`); a 429 sets exponential host backoff; a job that keeps failing backs off per job (`Scheduler.retryDelayMs`) |
 | OUTPUT | Upstream 429: `RATE_LIMITED` + quality event, **no retry**. Local bucket empty: `DEFERRED` (no request made). Worker: `RATE_LIMITED`, cached for the normal TTL so clients can't hammer it. |
 | FAILURE | Observations age, so groups become `STALE`. `capacityPlan` reports demand above capacity as `INFEASIBLE` in the coverage panel instead of silently under-sampling. |
 | RECOVERY | Automatic after backoff. There is no circumvention: no proxy rotation, no extra accounts. |

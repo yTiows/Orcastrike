@@ -36,7 +36,14 @@ export async function runJob({ db, client, job, cfg, env, nowMs, tracked, log = 
   let records = [];
   let outcome = raw.outcome;
   let parseError = null;
-  if (raw.outcome === "OK") {
+  let redirectError = raw.outcome === "REDIRECT" ? raw.error : null;
+  // A followed redirect that ends on a different page is not the requested resource: nothing
+  // from that page is stored under this item.
+  if (raw.outcome === "OK" && raw.final_url && !samePage(url, raw.final_url)) {
+    outcome = "REDIRECT";
+    redirectError = `redirected to ${raw.final_url}, which is not the requested page; nothing stored`;
+  }
+  if (outcome === "OK") {
     const fx = latestUsableFx(db, nowMs, cfg);
     records = desc.normalize(raw.text, {
       item: job.item,
@@ -66,11 +73,13 @@ export async function runJob({ db, client, job, cfg, env, nowMs, tracked, log = 
       requested_at: raw.requested_at,
       received_at: raw.received_at,
       http_status: raw.http_status,
-      outcome,
+      // The request log's outcome set is fixed (append-only audit table): an unfollowed or
+      // off-page redirect is stored as HTTP_ERROR with its 3xx status and target in `error`.
+      outcome: outcome === "REDIRECT" ? "HTTP_ERROR" : outcome,
       response_hash: raw.response_hash,
       parser_version: desc.parser_version,
       raw_payload: raw.outcome === "OK" ? JSON.stringify({ sanitization: raw.sanitization_notes, body: raw.sanitized }) : null,
-      error: parseError ? parseError.reason : raw.error,
+      error: parseError ? parseError.reason : (redirectError ?? raw.error),
       synthetic: raw.synthetic,
     });
     const base = {
@@ -126,13 +135,40 @@ export async function runJob({ db, client, job, cfg, env, nowMs, tracked, log = 
         summary.stored += 1;
       }
     }
-    if (outcome === "OK") resolveOnRecovery(db, { source: desc.source, endpoint: job.endpoint, nowIso });
-    else if (outcome === "PARSE_ERROR") {
+    if (outcome === "OK") resolveOnRecovery(db, { source: desc.source, endpoint: job.endpoint, nowIso, fxResolved: !records.some((r) => r.type === "quality" && r.code === "FX_UNAVAILABLE") });
+    else if (outcome === "REDIRECT") {
+      recordEventOnce(db, { code: desc.source === "steam" ? "STEAM_REDIRECT" : "HTTP_REDIRECT", source: desc.source, endpoint: job.endpoint, detail: redirectError, occurred_at: nowIso, synthetic: raw.synthetic });
+    } else if (outcome === "PARSE_ERROR") {
       recordEventOnce(db, { code: "PARSER_FAILURE", source: desc.source, endpoint: job.endpoint, detail: `${desc.parser_version}: ${parseError.reason}`, occurred_at: nowIso, synthetic: raw.synthetic, severity: parseError.severity });
     } else {
       recordEventOnce(db, { code: outcome === "RATE_LIMITED" ? "RATE_LIMITED" : outcome, source: desc.source, endpoint: job.endpoint, detail: raw.error ?? outcome, occurred_at: nowIso, synthetic: raw.synthetic });
     }
   });
-  if (outcome !== "OK") log("warn", `${job.endpoint}${job.item ? ` [${job.item}]` : ""}: ${outcome}`);
-  return summary;
+  if (outcome !== "OK") log("warn", `${job.endpoint}${job.item ? ` [${job.item}]` : ""}: ${outcome}${redirectError ? ` (${redirectError})` : ""}`);
+  return Object.assign(summary, {
+    http_status: raw.http_status ?? null,
+    elapsed_ms: raw.elapsed_ms ?? null,
+    redirects: raw.redirects ?? [],
+    error: parseError ? parseError.reason : (redirectError ?? raw.error ?? null),
+    records: countRecords(records),
+    notes: [...new Set(records.map((r) => r.quality_reason ?? (r.type === "quality" ? `${r.code}: ${r.detail}` : null)).filter(Boolean))].slice(0, 3),
+  });
+}
+
+function samePage(requested, final) {
+  const norm = (u) => {
+    const x = new URL(u);
+    return `${x.hostname}${decodeURIComponent(x.pathname).replace(/\/+$/, "").toLowerCase()}`;
+  };
+  return norm(requested) === norm(final);
+}
+
+// What the normalizer produced, by record type and quality state (for diagnostics).
+function countRecords(records) {
+  const out = {};
+  for (const r of records) {
+    const k = r.type === "market" || r.type === "sales" || r.type === "listing" ? `${r.type}:${r.kind ?? `${r.window_days ?? ""}d`}:${r.quality_state}` : r.type;
+    out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
 }

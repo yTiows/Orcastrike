@@ -11,6 +11,9 @@ const PACING = Object.freeze({
   skinport: { concurrency: 4, minIntervalMs: 0 },
   history: { concurrency: 1, minIntervalMs: 1500 },
   default: { concurrency: 2, minIntervalMs: 0 },
+  // The local app answers from its own database (it paces the upstreams itself), so reading
+  // from it needs no per-market spacing.
+  local: { concurrency: 6, minIntervalMs: 0 },
 });
 
 class Lane {
@@ -64,8 +67,9 @@ function localStateQuote(source, item, state, reason) {
 }
 
 export class WorkerClient {
-  constructor(baseUrl) {
+  constructor(baseUrl, { local = false } = {}) {
     this.baseUrl = baseUrl || "";
+    this.local = local;
     this.lanes = new Map();
   }
 
@@ -74,7 +78,7 @@ export class WorkerClient {
   }
 
   lane(name) {
-    if (!this.lanes.has(name)) this.lanes.set(name, new Lane(PACING[name] ?? PACING.default));
+    if (!this.lanes.has(name)) this.lanes.set(name, new Lane(this.local ? PACING.local : PACING[name] ?? PACING.default));
     return this.lanes.get(name);
   }
 

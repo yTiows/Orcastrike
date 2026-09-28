@@ -115,7 +115,48 @@ export class Engine {
     return Number(id);
   }
 
+  // Synchronous full cycle (tests, small watchlists).
   cycle() {
+    const steps = this.cycleSteps();
+    let r = steps.next();
+    while (!r.done) r = steps.next();
+    return this.emit(r.value);
+  }
+
+  // Daemon path: the same cycle in time slices, yielding to the event loop between slices so
+  // HTTP requests and the sampling scheduler keep running. A UMBRA universe of thousands of
+  // items used to block the process for over a minute per cycle. At most one cycle runs at a
+  // time; a call while one is running returns null.
+  async cycleAsync({ sliceMs = 25 } = {}) {
+    if (this.running) return null;
+    this.running = true;
+    const started = this.now();
+    try {
+      const steps = this.cycleSteps();
+      for (;;) {
+        const sliceEnd = this.now() + sliceMs;
+        let r;
+        this.db.exec("BEGIN");
+        try {
+          do r = steps.next();
+          while (!r.done && this.now() < sliceEnd);
+          this.db.exec("COMMIT");
+        } catch (err) {
+          this.db.exec("ROLLBACK");
+          throw err;
+        }
+        if (r.done) {
+          this.lastDurationMs = this.now() - started;
+          return this.emit(r.value);
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    } finally {
+      this.running = false;
+    }
+  }
+
+  *cycleSteps() {
     const nowMs = this.now();
     const nowIso = new Date(nowMs).toISOString();
     const cfg = this.getCfg();
@@ -153,6 +194,7 @@ export class Engine {
         o.opportunity_id = id;
         all.push(o);
       }
+      yield;
     }
     const counts = all.reduce((m, o) => ((m[o.status] = (m[o.status] ?? 0) + 1), m), {});
     const lastCycle = this.db.prepare("SELECT * FROM discovery_cycles WHERE completed_at IS NOT NULL ORDER BY cycle_id DESC LIMIT 1").get();
@@ -180,6 +222,11 @@ export class Engine {
         : null,
     };
     this.latest[mode.umbra ? "umbra" : "standard"] = result;
+    return { result, persisted, ctx };
+  }
+
+  // Listeners (paper trades, autopilot) run after the cycle's writes are committed.
+  emit({ result, persisted, ctx }) {
     for (const fn of this.listeners) {
       try {
         fn(result, persisted, ctx);

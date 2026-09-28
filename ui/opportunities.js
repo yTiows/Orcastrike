@@ -38,7 +38,7 @@ export function mount(root, app) {
       <details class="section"><summary><span>Track record <span class="muted">paper trades and your real trades, never pooled</span></span></summary>
         <div class="section-body grid-2"><div><h4>Forward paper trading ${tag("PAPER")}</h4><div id="rs-paper"></div></div><div><h4>Your real trades ${tag("REAL")}</h4><div id="rs-real"></div></div></div></details>
       <details class="section"><summary><span>Data health <span class="muted">open problems and daily coverage</span></span></summary>
-        <div class="section-body grid-2"><div><h4>Open data problems</h4><div id="rs-quality"></div></div><div><h4>Snapshot coverage, last 14 complete UTC days</h4><div id="rs-coverage"></div></div></div></details>
+        <div class="section-body grid-2"><div><h4>Open data problems</h4><div id="rs-quality"></div></div><div><h4>Snapshot coverage: last 14 complete UTC days, and today</h4><div id="rs-coverage"></div></div></div></details>
       <details class="section"><summary><span>Staged links and notifications <span class="muted">L1 links only, nothing is submitted</span></span></summary>
         <div class="section-body" id="rs-staged"></div></details>
       <details class="section" id="rs-fees-section"><summary><span>Fee calibration <span class="muted" id="rs-fees-label"></span></span></summary>
@@ -275,10 +275,14 @@ export function update(app, d) {
       : `<p class="muted">${chip("none", "ok")} No open data problems.</p>`
     : "";
   const cov = app.research.coverage;
+  // NOT_RUNNING (the app wasn't collecting yet) is shown as such, never as 0%.
+  const covCell = (c) =>
+    c?.state === "NOT_RUNNING" ? `<span class="muted" title="${escapeHtml(c.reason ?? "")}">not running</span>` : c?.coverage_pct_x100 === null || c?.coverage_pct_x100 === undefined ? "—" : `${(c.coverage_pct_x100 / 100).toFixed(1)}%${c.state === "PARTIAL_DAY" ? '<span class="muted small"> (part)</span>' : ""}`;
+  const covRow = (label, day) => `<tr><td>${escapeHtml(label)}</td>${Object.keys(cov.plan).map((s) => `<td class="num">${covCell(day[s])}</td>`).join("")}</tr>`;
   els.coverage.innerHTML = cov
     ? `<div class="table-wrap"><table class="compact"><thead><tr><th>Day</th>${Object.keys(cov.plan).map((s) => `<th class="num">${market(s)}</th>`).join("")}</tr></thead><tbody>${cov.days
-        .map((day) => `<tr><td>${escapeHtml(Object.values(day)[0]?.day ?? "")}</td>${Object.keys(cov.plan).map((s) => `<td class="num">${day[s]?.coverage_pct_x100 === null || day[s]?.coverage_pct_x100 === undefined ? "—" : `${(day[s].coverage_pct_x100 / 100).toFixed(1)}%`}</td>`).join("")}</tr>`)
-        .join("")}</tbody></table></div><p class="small muted">Plan: ${escapeHtml(Object.entries(cov.plan).map(([s, pl]) => `${s} ${pl.demanded_per_day}/day needed, ${pl.capacity_per_day}/day possible${pl.feasible ? "" : " (INFEASIBLE)"}`).join(" · "))}</p>`
+        .map((day) => covRow(Object.values(day)[0]?.day ?? "", day))
+        .join("")}${cov.today ? covRow("Today so far", cov.today) : ""}</tbody></table></div><p class="small muted">Plan: ${escapeHtml(Object.entries(cov.plan).map(([s, pl]) => `${s} ${pl.demanded_per_day}/day needed, ${pl.capacity_per_day}/day possible${pl.feasible ? "" : " (INFEASIBLE)"}`).join(" · "))}</p>`
     : "";
 
   const c = app.research.control;

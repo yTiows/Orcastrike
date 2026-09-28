@@ -1,19 +1,19 @@
 {
-  "run_at": "2026-09-28T07:17:42.252Z",
+  "run_at": "2026-09-28T17:51:51.483Z",
   "upstream": "SYNTHETIC (loopback)",
   "browser": "chromium (headless)",
-  "passed": 46,
+  "passed": 48,
   "failed": 0,
   "results": [
     {
       "name": "storage: IndexedDB is primary",
       "ok": true,
-      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T07:17:29.297Z; the original was kept"
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T17:51:37.513Z; the original was kept"
     },
     {
       "name": "storage: v1 localStorage ledger migrated, original kept",
       "ok": true,
-      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T07:17:29.297Z; the original was kept"
+      "detail": "Storage: indexeddb · migrated from localStorage (v1) at 2026-09-28T17:51:37.513Z; the original was kept"
     },
     {
       "name": "storage: localStorage source untouched",
@@ -33,7 +33,7 @@
     {
       "name": "portfolio: Now fills the time field",
       "ok": true,
-      "detail": "2026-09-28T07:17"
+      "detail": "2026-09-28T17:51"
     },
     {
       "name": "ledger: buy recorded",
@@ -76,6 +76,11 @@
       "detail": ""
     },
     {
+      "name": "markets: every item of a refresh shows its result, and each unavailable one its reason",
+      "ok": true,
+      "detail": "(3 ok, 54 unavailable, 0 pending) [{\"state\":\"UNAVAILABLE 164 ms\",\"reason\":\"on the watchlist; nothing stored for it yet; the collector has not sent steam_listing_page yet\"},{\"state\":\"UNAVAILABLE 170 ms\",\"reason\":\"on the watchlist; nothing stored for it yet; the collector has not sent csfloat_listings yet\"},{\"state\":\"UNAVAILABLE 190 ms\",\"reason\":\"on the watchlist; nothing stored for it yet; last skinport_items request at 2026-09-28T17:51:17.649Z: OK (HTTP 200)\"}]"
+    },
+    {
       "name": "research: evaluated pairs rendered",
       "ok": true,
       "detail": "8"
@@ -103,7 +108,7 @@
     {
       "name": "research: PARSER_UNVERIFIED surfaced",
       "ok": true,
-      "detail": "\n    —\n    ▸ Kilowatt Case SYNTHETIC\n    Steam → CSFloat\n    Not enough verified data INSUFFICIENTentry_quote: no quote observation from steam\n    —\n    —\n    INSUFFICIENTCSFloat 07:17 UTC · 0s\n  "
+      "detail": "\n    —\n    ▸ Kilowatt Case SYNTHETIC\n    Steam → CSFloat\n    Not enough verified data INSUFFICIENTentry_quote: no quote observation from steam\n    —\n    —\n    INSUFFICIENTCSFloat 17:51 UTC · 0s\n  "
     },
     {
       "name": "research: row expands into a step-by-step trace",
@@ -143,7 +148,7 @@
     {
       "name": "UMBRA: rows evaluated, and the mode grants no eligibility",
       "ok": true,
-      "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
+      "detail": "[\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\",\"INSUFFICIENT\"]"
     },
     {
       "name": "layout: no horizontal overflow at 1280px (overview)",
@@ -189,6 +194,11 @@
       "name": "reduced motion: crossfade disabled",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "overview: with no cash, adding it is the first step and names BLOCKED_BY_TIER",
+      "ok": true,
+      "detail": "!\n    Add your starting cashUntil you do, every pair is BLOCKED_BY_TIER: tiers and position sizes are worked out from the cash you have. Takes 10 seconds.\n    Add cash"
     },
     {
       "name": "overview: the Add cash step opens the cash form on Portfolio",

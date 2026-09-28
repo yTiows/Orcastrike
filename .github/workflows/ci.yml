@@ -33,7 +33,8 @@ jobs:
       - name: Launcher (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: Orcastrike.cmd doctor < NUL
+        # --offline: CI never sends requests to the marketplaces (doctor's live probe is for users).
+        run: Orcastrike.cmd doctor --offline < NUL
       - name: Launcher (Linux)
         if: runner.os != 'Windows'
-        run: ./orcastrike.sh doctor
+        run: ./orcastrike.sh doctor --offline

@@ -4,7 +4,8 @@
 //   - localStorage v1 ledger → IndexedDB migration (non-destructive, source kept)
 //   - FIFO partial-lot sell through the Portfolio forms (opened on demand, "Now" fills the time)
 //   - Opportunities: SYNTHETIC/UNVERIFIED rows never ELIGIBLE, blocked reason on every row
-//   - Overview: five profit figures; the "Add cash" next step opens the cash form
+//   - Overview: five profit figures; with no cash, "Add cash" is the first step and opens the form
+//   - Markets: every refreshed item shows its result and, when unavailable, the reason
 //   - legacy #research / #ledger links land on the renamed pages
 //   - UMBRA via the typed override: theme applied, UNPROVEN banner, reduced motion respected
 //   - kill switch engage/release
@@ -214,6 +215,14 @@ try {
   check("dashboard: chart area never blank without Chart.js", /Chart unavailable|No history|INSUFFICIENT|UNAVAILABLE|UNVERIFIED|Loading/.test(chartText), chartText.slice(0, 200));
   check("markets: price history loads without a button press", /Chart unavailable|Date \(UTC\)/.test(chartText), chartText.slice(0, 200));
   check("dashboard: Chart.js absent (CDN blocked)", await page.evaluate(() => typeof window.Chart === "undefined"));
+  await page.waitForFunction(() => /\(\d+ ok, \d+ unavailable, 0 pending\)/.test(document.querySelector("#scan-progress-sum")?.textContent ?? ""), null, { timeout: 20000 }).catch(() => {});
+  const progressSum = await page.textContent("#scan-progress-sum");
+  const progressRows = await page.$$eval("#scan-progress-body tbody tr", (trs) => trs.map((tr) => ({ state: tr.children[2]?.textContent.trim(), reason: tr.children[3]?.textContent.trim() })));
+  check(
+    "markets: every item of a refresh shows its result, and each unavailable one its reason",
+    /\(\d+ ok, \d+ unavailable, 0 pending\)/.test(progressSum) && progressRows.length > 0 && progressRows.every((r) => /AVAILABLE|STALE/.test(r.state) && (!/UNAVAILABLE|INVALID|NOT_CONFIGURED/.test(r.state) || r.reason.length > 0)),
+    `${progressSum} ${JSON.stringify(progressRows.slice(0, 3))}`,
+  );
   await page.screenshot({ path: join(OUT, "markets-desktop.png"), fullPage: true });
 
   // Opportunities: rows exist, none ELIGIBLE, every non-eligible row carries a blocked reason.
@@ -300,6 +309,8 @@ try {
   await m.page.waitForSelector("#ledger-storage", { state: "attached" });
   // Fresh browser profile: no cash recorded, so the Overview checklist offers it in one click.
   await m.page.waitForSelector('#ov-steps [data-act="add-cash"]', { timeout: 10000 }).catch(() => {});
+  const firstStep = await m.page.textContent("#ov-steps li:first-child").catch(() => "");
+  check("overview: with no cash, adding it is the first step and names BLOCKED_BY_TIER", /Add your starting cash/.test(firstStep) && /BLOCKED_BY_TIER/.test(firstStep), firstStep);
   if (await m.page.isVisible('#ov-steps [data-act="add-cash"]')) await m.page.click('#ov-steps [data-act="add-cash"]');
   check("overview: the Add cash step opens the cash form on Portfolio", (await m.page.isVisible('[data-view="portfolio"]')) && (await m.page.isVisible("#f-cash")));
   for (const t of TABS) {

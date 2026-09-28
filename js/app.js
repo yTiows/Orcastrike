@@ -64,6 +64,7 @@ export const app = {
   feeModelCurrent: BASE_FEE_MODEL.fee_model_version,
   parserVerification: {},
   quotes: new Map(),
+  diagnostics: { running: false, report: null, error: null },
   histories: new Map(),
   sims: new Map(),
   events: { events: [], rejected: [] },
@@ -73,7 +74,7 @@ export const app = {
   research: { control: null, opportunities: { standard: null, umbra: null }, evidence: null, paper: null, real: null, quality: null, coverage: null, feeModels: null, estimatedExit: null, lastSyncAt: null, syncError: null, lastPollAt: null },
   backup: { state: null },
   refreshing: false,
-  progress: { done: 0, total: 0 },
+  progress: { done: 0, total: 0, failed: 0, started_at: null, items: new Map() },
   lastRefreshIso: null,
   actions: null,
 };
@@ -95,7 +96,7 @@ function applySettings() {
   app.settingsErrors = s.errors;
   // Served by the daemon and no Worker configured → the daemon serves the same v1 quote contract.
   const base = app.cfg.WORKER_BASE_URL || (app.daemon.available ? location.origin : "");
-  app.client = new WorkerClient(base);
+  app.client = new WorkerClient(base, { local: !app.cfg.WORKER_BASE_URL && app.daemon.available });
 }
 
 export function currentFeeModel() {
@@ -310,6 +311,35 @@ function applyDaemonHealth(h) {
 }
 
 // Runs the live contract check now, then follows it until it finishes (a couple of minutes at most).
+// One real request per source through the app's collector (daemon/diagnostics.js); polls
+// until the report is in.
+export async function runDiagnostics() {
+  app.diagnostics = { ...app.diagnostics, running: true, error: null };
+  render();
+  const r = await app.daemon.post("/api/v2/diagnostics", { confirm: true });
+  if (!r.ok) {
+    app.diagnostics = { ...app.diagnostics, running: false, error: r.reason ?? "the app refused the request" };
+    render();
+    return r;
+  }
+  const deadline = Date.now() + 120000;
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 1500));
+    const st = await app.daemon.get("/api/v2/diagnostics");
+    if (st.ok && !st.body.running) {
+      app.diagnostics = { running: false, report: st.body.report, error: st.body.error };
+      break;
+    }
+    if (Date.now() > deadline) {
+      app.diagnostics = { ...app.diagnostics, running: false, error: "no result within 2 minutes" };
+      break;
+    }
+  }
+  render();
+  refreshResearch();
+  return r;
+}
+
 export async function verifyNow() {
   const r = await app.daemon.post("/api/v2/verify", { confirm: true });
   const deadline = Date.now() + 5 * 60000;
@@ -339,17 +369,26 @@ export async function refreshQuotes() {
   const heldItems = (app.ledger?.lots ?? []).filter((l) => l.status === "open").map((l) => l.canonical_item_id);
   const items = [...new Set([...app.watchlist, ...heldItems])];
   const jobs = items.flatMap((item) => SOURCES.map((source) => ({ source, item })));
-  app.progress = { done: 0, total: jobs.length };
+  // Per item and source: pending → ok | failed (with the backend's reason), so a refresh can
+  // never sit silently at 0 of N.
+  app.progress = { done: 0, total: jobs.length, failed: 0, started_at: Date.now(), items: new Map(jobs.map((j) => [quoteKey(j.source, j.item), { ...j, state: "pending", reason: null, ms: null }])) };
   render();
-  app.health = await app.client.health();
+  const ticker = setInterval(render, 1000); // elapsed-time display while nothing has answered
+  const healthP = app.client.health().then((h) => (app.health = h));
   await Promise.all(
     jobs.map(async ({ source, item }) => {
+      const t0 = Date.now();
       const q = await app.client.quote(source, item);
       app.quotes.set(quoteKey(source, item), q);
+      const ok = q.state === "AVAILABLE" || q.state === "STALE";
+      Object.assign(app.progress.items.get(quoteKey(source, item)), { state: ok ? "ok" : "failed", status: q.state, reason: ok ? null : q.reason ?? q.state, ms: Date.now() - t0 });
       app.progress.done += 1;
+      if (!ok) app.progress.failed += 1;
       render();
     }),
   );
+  await healthP;
+  clearInterval(ticker);
   app.refreshing = false;
   app.lastRefreshIso = new Date().toISOString();
   render();
@@ -560,6 +599,7 @@ async function boot() {
     saveDaemonSettings: (settings) => daemonAction("/api/v2/settings", { settings }),
     fsaSupported: () => fsaSupported(),
     verifyNow,
+    runDiagnostics,
     navigate,
     onNavigate: (tab, fn) => navHandlers.set(tab, fn),
     render,
@@ -591,6 +631,8 @@ async function boot() {
     if (app.watchlist.length) await app.daemon.post("/api/v2/watchlist", { items: app.watchlist });
     await refreshResearch();
     await syncLedger();
+    const last = await app.daemon.get("/api/v2/diagnostics");
+    if (last.ok) app.diagnostics = { running: Boolean(last.body.running), report: last.body.report, error: last.body.error };
     setInterval(refreshResearch, RESEARCH_POLL_MS);
     setInterval(syncLedger, 5 * 60000);
   }

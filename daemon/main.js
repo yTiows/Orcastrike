@@ -94,7 +94,7 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
   const verifier = new Verifier({ root: ROOT, dataDir, env, log, onDone: () => ctx.reloadVerification() });
   ctx.verifier = verifier;
 
-  const client = new UpstreamClient({ rateLimits: settingsState.cfg.ratelimit, env });
+  const client = new UpstreamClient({ rateLimits: settingsState.cfg.ratelimit, env, log });
   const scheduler = new Scheduler({ db, client, getCfg: ctx.getCfg, getSettings: () => getSettings(db), env, log, onAfterJob: (job, r) => ctx.onAfterJob?.(job, r) });
   ctx.scheduler = scheduler;
   ctx.client = client;
@@ -145,13 +145,8 @@ export async function startDaemon({ env = process.env, port = Number(env.ORCASTR
     };
     purge();
     timers.push(setInterval(purge, 6 * 3600 * 1000));
-    const runEngine = () => {
-      try {
-        engine.cycle();
-      } catch (err) {
-        log("error", `engine cycle failed: ${err?.message ?? err}`);
-      }
-    };
+    const runEngine = () =>
+      engine.cycleAsync().catch((err) => log("error", `engine cycle failed: ${err?.message ?? err}`));
     runEngine();
     timers.push(setInterval(runEngine, Number(env.ORCASTRIKE_ENGINE_INTERVAL_MS) || 30000));
     timers.push(setInterval(() => ctx.reloadVerification(), 10 * 60 * 1000));

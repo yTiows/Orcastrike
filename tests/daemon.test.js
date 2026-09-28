@@ -35,8 +35,8 @@ function obs(db, over = {}) {
 
 test("migrations are versioned and idempotent", () => {
   const db = freshDb();
-  assert.equal(migrate(db), 1);
-  assert.equal(migrate(db), 1);
+  assert.equal(migrate(db), 2);
+  assert.equal(migrate(db), 2);
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
   for (const t of ["items", "source_requests", "market_observations", "listing_observations", "sales_observations", "opportunities", "paper_trades", "real_trades", "data_quality_events", "parser_versions", "fee_model_versions", "strategy_versions"]) {
     assert.ok(tables.includes(t), `missing table ${t}`);
