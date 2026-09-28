@@ -7,3 +7,7 @@ coverage/
 .wrangler/
 dist/
 .dev.vars
+.orcastrike-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

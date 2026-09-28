@@ -71,3 +71,39 @@ export function parseSkinportSalesHistory(body, fx = null) {
   }
   return out;
 }
+
+// CSFloat listing details (listing-level identity and the reference SIGNAL). Field names follow
+// the third-party Go client csfloat_go (UNVERIFIED). Float values stay decimal strings (they are
+// wear, not money). Seller data is never read.
+export function parseCsfloatListingDetails(body, item) {
+  const list = Array.isArray(body) ? body : body && Array.isArray(body.data) ? body.data : null;
+  if (!list) return { state: "INVALID", reason: "CSFloat listings body malformed", listings: [] };
+  const listings = [];
+  for (const l of list) {
+    if (!l || typeof l !== "object" || !l.item || l.item.market_hash_name !== item) continue;
+    if (l.type !== undefined && l.type !== "buy_now") continue;
+    if (!Number.isSafeInteger(l.price) || l.price <= 0) return { state: "INVALID", reason: "listing price malformed", listings: [] };
+    const it = l.item;
+    listings.push({
+      listing_id: typeof l.id === "string" || Number.isSafeInteger(l.id) ? String(l.id) : null,
+      price_usd_cents: l.price,
+      float_value: typeof it.float_value === "number" && Number.isFinite(it.float_value) ? String(it.float_value) : null,
+      paint_seed: Number.isSafeInteger(it.paint_seed) ? it.paint_seed : null,
+      paint_index: Number.isSafeInteger(it.paint_index) ? it.paint_index : null,
+      stickers: Array.isArray(it.stickers) ? it.stickers.map((s) => (typeof s?.name === "string" ? s.name : null)).filter(Boolean) : [],
+      reference:
+        l.reference && Number.isSafeInteger(l.reference.predicted_price) && l.reference.predicted_price > 0
+          ? {
+              predicted_price_cents: l.reference.predicted_price,
+              base_price_cents: Number.isSafeInteger(l.reference.base_price) ? l.reference.base_price : null,
+              quantity: Number.isSafeInteger(l.reference.quantity) ? l.reference.quantity : null,
+              last_updated: typeof l.reference.last_updated === "string" ? l.reference.last_updated : null,
+            }
+          : null,
+    });
+  }
+  if (!listings.length) return { state: "UNAVAILABLE", reason: "no buy-now listings for this exact name", listings };
+  if (listings.some((l) => !l.listing_id)) return { state: "INVALID", reason: "listing id missing", listings: [] };
+  listings.sort((a, b) => a.price_usd_cents - b.price_usd_cents);
+  return { state: "AVAILABLE", listings };
+}

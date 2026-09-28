@@ -17,5 +17,5 @@ export default [
   },
   { files: ["js/**", "ui/**", "config/**"], languageOptions: { globals: { ...globals.browser } } },
   { files: ["worker/**"], languageOptions: { globals: { ...globals.serviceworker } } },
-  { files: ["tests/**", "scripts/**", "eslint.config.js"], languageOptions: { globals: { ...globals.node } } },
+  { files: ["tests/**", "scripts/**", "daemon/**", "eslint.config.js"], languageOptions: { globals: { ...globals.node } } },
 ];

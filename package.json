@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.js\"",
+    "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.js\"",
     "lint": "eslint .",
     "check": "npm run lint && npm test",
     "audit:secrets": "node scripts/secret-scan.mjs",

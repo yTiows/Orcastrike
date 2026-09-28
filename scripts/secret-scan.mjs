@@ -5,7 +5,8 @@
 // 7. Literal values of any credentials present in this shell's env are absent everywhere.
 // 8. P0-8 wording: no "expected margin/return" phrasing in shipped files.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const findings = [];
 const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
@@ -69,10 +70,45 @@ for (const f of shipped) {
 
 // 5: Worker logging
 if (/console\.(log|info|warn|error|debug)/.test(readFileSync("worker/lib.js", "utf8") + readFileSync("worker/index.js", "utf8"))) findings.push("worker/: contains console logging");
+// Daemon output must go through the redacting logger only.
+for (const f of tracked.filter((x) => x.startsWith("daemon/"))) {
+  if (/console\.(log|info|warn|error|debug)|process\.(stdout|stderr)\.write/.test(readFileSync(f, "utf8")) && f !== "daemon/redact.js") findings.push(`${f}: writes output without the redacting logger`);
+}
 
 // 6: wrangler.toml
 const toml = readFileSync("wrangler.toml", "utf8");
 if (/^\s*CSFLOAT_API_KEY\s*=/m.test(toml)) findings.push("wrangler.toml: CSFLOAT_API_KEY must be a secret, not a var");
+
+// 6b: daemon databases, data directory and ledger backups must never be tracked
+for (const f of tracked) {
+  if (/\.(sqlite|sqlite-wal|sqlite-shm|db)$/i.test(f)) findings.push(`${f}: database file is tracked`);
+  if (/(^|\/)\.orcastrike-data\//.test(f)) findings.push(`${f}: daemon data directory is tracked`);
+  if (/orcastrike-ledger-.*\.json$/i.test(f)) findings.push(`${f}: ledger backup is tracked`);
+}
+// 6c: local daemon data (if present on this machine): database bytes and stored payloads must
+// not contain credential shapes or the literal values of configured secrets.
+const dataDirs = [process.env.ORCASTRIKE_DATA_DIR, ".orcastrike-data"].filter(Boolean);
+for (const dir of dataDirs) {
+  let files = [];
+  try {
+    files = readdirSync(dir).map((f) => join(dir, f));
+  } catch {
+    continue;
+  }
+  for (const f of files) {
+    let text;
+    try {
+      text = readFileSync(f).toString("latin1");
+    } catch {
+      continue;
+    }
+    for (const name of ["CSFLOAT_API_KEY", "CLOUDFLARE_API_TOKEN", "NTFY_TOPIC"]) {
+      const v = process.env[name];
+      if (v && v.length >= 8 && text.includes(v)) findings.push(`${f}: contains the literal value of $${name}`);
+    }
+    for (const [name, re] of PATTERNS.slice(1)) if (re.test(text)) findings.push(`${f}: ${name}`);
+  }
+}
 
 // 7: literal env credential values
 for (const name of ["CSFLOAT_API_KEY", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]) {
