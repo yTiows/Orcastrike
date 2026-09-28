@@ -40,3 +40,27 @@ Ambiguities resolved during the build, each with a one-line reason. "Spec" = Bui
 | D-34 | Event `confidence` = medium for dates confirmed by search summaries citing Liquipedia/Wikipedia/case lists, low for a single secondary source; each entry has a `methodology` field. | Pages couldn't be fetched directly; the confidence reflects that. |
 | D-35 | Tier-compression buckets use the item-price band of the trade's average unit buy price. | "Higher tiers = thinner margins" is a claim about item price levels. |
 | D-36 | Implementation order: tiers/breaker core was built with the ledger (Step 3) because the ledger's close logic needs the breaker evaluation; BACKTEST_RESULTS.md was written before the tier UI. No tier constant was tuned on backtest output (none exists). | Dependency order; the spec's intent (no tuning on results) is preserved. |
+
+## v2 — research/evidence system (2026-09-28)
+
+### Conflicts (P0 rules win)
+
+| ID | CONFLICT old X | new Y | Resolution | Alternatives considered → trade-off |
+|---|---|---|---|---|
+| C1 | P0-1 "NO auto-execute, auto-sell, auto-buy" | Automation levels L1–L3 | Automation is a separately gated tier, **default OFF** at every level. UMBRA or any mode never enables it. L1 only stages external links. L2/L3 need a verified execution API; none exists (DATA_SOURCE_MATRIX #19/#20), so they stay unimplemented and can't be switched on. The permission controller is built and tested with a SYNTHETIC mock executor only. | Drop automation entirely → loses the tested safety controller the user asked for. Implement against unverified endpoints → violates "no feature without verified data". |
+| C2 | 30-flip gate (tier compression, ledger flips) | Paper trades | The gate is renamed **EXECUTION_EVIDENCE** and counts completed **REAL** ledger trades only. Paper trades feed SIGNAL_EVIDENCE only. | Counting paper at a discount → pools distributions, which the spec forbids. |
+| C3 | Watchlist-only discovery (v1 limitation 4) | Full-market universe | The watchlist stays the standard-mode universe. The full-market universe (last completed Skinport catalog cycle, price ≥ $10) applies only to UMBRA ranking. | Full market everywhere → unbounded request volume under rate limits. |
+| C4 | Steam fee: spec formula (15% of gross, → 1700 on 2000) | Valve's exact method (→ 1739) | Keep the conservative default. The exact method is computed and shown beside it wherever a Steam sale appears. The default changes only through an accepted fee-calibration proposal, which creates a new fee_model_version. | Switch to exact now → silent change of a documented default. |
+| C5 | P0-8: never phrase a historical simulated margin as "expected margin"; the secret scan flags "expected margin/return/profit" wording | New defined metric `expected_net_profit` | The identifier is kept exactly as defined. Every display renders it as `expected_net_profit (ESTIMATED, pessimistic, not a forecast)` in code form; free-text "expected profit/margin" stays banned by the scan. Historical simulation never feeds it. | Renaming the metric → breaks traceability to the spec. |
+| C6 | v1 "no partial-lot sales" (documented limitation, not P0) | FIFO partial-lot splitting | Replaced. Sales allocate FIFO across lots with explicit per-lot quantities; replay validation is unchanged in strictness. Old whole-lot records migrate losslessly. | Keep whole lots → contradicts a direct requirement; no P0 rule protects it. |
+| C7 | Position-size formula (15% of deployable, 60% exposure, 40% reserve) | 20% of capital-at-cost cap and velocity cap | All limits apply and the **smallest wins**. Existing definitions are unchanged. | Replace the old formula → the spec says keep existing tier limits. |
+| C8 | v1 gate `MIN_LISTING_DEPTH` (supply) | "Liquidity is a gate via observed sale velocity; listing_supply is a label" | The Level 1 scanner (observed discrepancy) keeps its depth gate. The Level 2+ opportunity engine gates on exit-market `observed_sale_velocity` and shows `listing_supply` as a label. | Drop the depth gate → weakens a working v1 control. |
+
+### Phase 0 decisions
+
+| ID | Decision | Alternatives → trade-off |
+|---|---|---|
+| D-37 | Contract test stores sanitized LIVE fixtures (seller identity and credential-like keys removed; Steam HTML reduced to parser-read fragments; Skinport catalog reduced to probe items plus total count, with the full-body SHA-256 kept). | Store full bodies → personal data of other users and multi-MB fixtures. |
+| D-38 | A parser counts as VERIFIED only when a LIVE fixture passes it. Opportunities from observations whose parser is UNVERIFIED carry `PARSER_UNVERIFIED` and are **not ELIGIBLE**. | Trust documented formats → the claim would rest on unchecked inputs. Trade-off: nothing is ELIGIBLE until the user runs the contract test once. |
+| D-39 | Daemon placement: local machine (provisional, UNVERIFIED). See ARCHITECTURE_DELTA.md. | VPS → datacenter IPs, extra infrastructure; revisit with netcheck data. |
+| D-40 | Skinport effective quote age = age since our observation + 300s upstream cache. | Ignore the upstream cache → understates staleness. Trade-off: under the default 180s limit, Skinport quotes are STALE by construction. |

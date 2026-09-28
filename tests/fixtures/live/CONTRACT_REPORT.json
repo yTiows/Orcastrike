@@ -1,0 +1,57 @@
+{
+  "run_at": "2026-09-28T03:03:46.033Z",
+  "command": "node scripts/contract_test.mjs   # optional: CSFLOAT_API_KEY=... in the environment",
+  "node": "v22.22.2",
+  "results": [
+    {
+      "endpoint": "frankfurter_latest",
+      "status": "BLOCKED",
+      "reason": "HTTP 403 (upstream or egress proxy)",
+      "latency_ms": 112
+    },
+    {
+      "endpoint": "steam_priceoverview",
+      "status": "BLOCKED",
+      "reason": "HTTP 403 (upstream or egress proxy)",
+      "latency_ms": 75
+    },
+    {
+      "endpoint": "steam_listing_page",
+      "status": "BLOCKED",
+      "reason": "HTTP 403 (upstream or egress proxy)",
+      "latency_ms": 7
+    },
+    {
+      "endpoint": "steam_histogram",
+      "status": "BLOCKED",
+      "reason": "depends on steam_listing_page"
+    },
+    {
+      "endpoint": "skinport_items",
+      "status": "BLOCKED",
+      "reason": "HTTP 403 (upstream or egress proxy)",
+      "latency_ms": 67
+    },
+    {
+      "endpoint": "skinport_sales_history",
+      "status": "BLOCKED",
+      "reason": "HTTP 403 (upstream or egress proxy)",
+      "latency_ms": 31
+    },
+    {
+      "endpoint": "csfloat_listings",
+      "status": "UNVERIFIED",
+      "reason": "CSFLOAT_API_KEY not set in this environment"
+    },
+    {
+      "endpoint": "csfloat_buy_orders",
+      "status": "UNVERIFIED",
+      "reason": "CSFLOAT_API_KEY not set"
+    },
+    {
+      "endpoint": "csfloat_sales_history",
+      "status": "UNVERIFIED",
+      "reason": "CSFLOAT_API_KEY not set in this environment"
+    }
+  ]
+}
